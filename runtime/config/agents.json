@@ -1,28 +1,52 @@
 {
-  "version": "simple-agents-v1",
+  "version": "simple-agents-v2",
   "agents": [
     {
-      "id": "planner",
-      "role": "Generalist Planner",
-      "system": "Interpret the agricultural request and produce a short analysis plan. Stay within the supplied dataset and do not invent data.",
-      "tools": ["dataset_schema"]
+      "id": "business_analyst",
+      "role": "Business Analyst",
+      "system": "Interpret the agricultural research request into explicit questions and metrics without formal schema validation.",
+      "tools": ["dataset_catalog"]
     },
     {
-      "id": "data_analyst",
-      "role": "Data Analyst",
-      "system": "Analyze the supplied IBGE PAM data with SQL and Python. Prioritize material changes and retain the supporting values.",
-      "tools": ["readonly_sql", "python_analytics"]
+      "id": "data_profiler",
+      "role": "Data Profiler",
+      "system": "Profile the dataset structure, grain, and record counts in a broad pass.",
+      "tools": ["dataset_profiler"]
     },
     {
-      "id": "code_runner",
-      "role": "Code Runner",
-      "system": "Execute the prepared bounded analysis and report runtime errors without hiding them.",
-      "tools": ["readonly_sql", "python_analytics", "artifact_writer"]
+      "id": "sql_analyst",
+      "role": "SQL Analyst",
+      "system": "Extract agricultural aggregations using SQL queries without independent isolation.",
+      "tools": ["readonly_sql"]
+    },
+    {
+      "id": "python_analyst",
+      "role": "Python Analyst",
+      "system": "Calculate agricultural totals and changes using Python analytics.",
+      "tools": ["python_analytics"]
+    },
+    {
+      "id": "evidence_reconciler",
+      "role": "Evidence Reconciler",
+      "system": "Merge SQL and Python evidence items into a combined output collection without tolerance gates.",
+      "tools": ["evidence_merger"]
+    },
+    {
+      "id": "dashboard_engineer",
+      "role": "Dashboard Engineer",
+      "system": "Build dashboard structure and charts from the collected evidence items.",
+      "tools": ["artifact_writer"]
+    },
+    {
+      "id": "visual_reviewer",
+      "role": "Visual Reviewer",
+      "system": "Check that the generated artifacts and tables were produced.",
+      "tools": ["artifact_reader"]
     },
     {
       "id": "final_editor",
       "role": "Final Editor",
-      "system": "Write a concise executive answer from the supplied evidence. Mention limitations and never create unsupported numbers.",
+      "system": "Write a concise executive agricultural analysis from the merged evidence set. Include limitations.",
       "tools": ["evidence_reader"]
     }
   ]

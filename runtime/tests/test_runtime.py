@@ -27,11 +27,11 @@ class StubModel:
         self, role: str, system: str, user: str, max_tokens: int | None = None
     ) -> tuple[dict[str, Any], LLMTrace]:
         del system, user, max_tokens
-        payload = (
-            {"goals": ["compare"], "metrics": ["production"], "steps": ["analyze"]}
-            if role == "planner"
-            else {"priorities": ["production"], "cautions": ["fixture data"]}
-        )
+        payload = {
+            "business_questions": ["What changed?"],
+            "metrics": ["production"],
+            "acceptance_criteria": ["All crops analyzed"],
+        }
         return payload, LLMTrace(role=role, content="{}", completion_tokens=10)
 
     def complete(self, role: str, system: str, user: str, max_tokens: int | None = None) -> LLMTrace:
@@ -84,8 +84,8 @@ def test_simple_harness_runs_linear_flow(dataset_path: Path, tmp_path: Path) -> 
     )
     assert result["harness"] == "simple"
     assert result["narrative"] == "Evidence-backed fixture analysis."
-    assert result["model_usage"]["calls"] == 3
-    assert ("planner", "started") in events
+    assert result["model_usage"]["calls"] == 2
+    assert ("business_analyst", "started") in events
     assert ("final_editor", "completed") in events
 
     run_dir = tmp_path / "outputs" / "simple-test"
@@ -98,3 +98,16 @@ def test_simple_harness_runs_linear_flow(dataset_path: Path, tmp_path: Path) -> 
     assert "id=\"kpis\"" in html_text
     assert "id=\"charts\"" in html_text
     assert "id=\"evidence-ledger\"" in html_text
+
+
+def test_simple_harness_supports_custom_agent_prompts(dataset_path: Path, tmp_path: Path) -> None:
+    events: list[tuple[str, str]] = []
+    harness = SimpleHarness(StubModel(), dataset_path, tmp_path / "outputs")
+    result = harness.run(
+        "custom-agent-test",
+        "Analyze agricultural changes in the controlled fixture dataset.",
+        lambda node, event_type, _message, _data=None: events.append((node, event_type)),
+        agent_prompts={"final_editor": "Custom modified final editor system prompt."},
+    )
+    assert result["harness"] == "simple"
+    assert ("final_editor", "completed") in events
