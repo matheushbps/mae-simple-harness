@@ -57,12 +57,15 @@ class SimpleHarness:
         user: str,
         emit: Emit,
         traces: list[LLMTrace],
+        max_tokens: int | None = None,
     ) -> str:
         agent = self.agents[role_id]
         last_error: Exception | None = None
         for attempt in range(2):
             try:
-                trace = self.model.complete(role_id, agent["system"], user)
+                trace = self.model.complete(
+                    role_id, agent["system"], user, max_tokens=max_tokens
+                )
                 traces.append(trace)
                 if not trace.content.strip():
                     raise ValueError("Model returned empty visible content.")
@@ -148,6 +151,7 @@ class SimpleHarness:
             f"{json.dumps([item.model_dump(mode='json') for item in top_evidence])}",
             emit,
             traces,
+            max_tokens=getattr(self.model, "max_completion_tokens", None),
         )
         # Update dashboard artifact to embed narrative
         write_dashboard_artifact(
