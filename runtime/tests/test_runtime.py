@@ -87,3 +87,14 @@ def test_simple_harness_runs_linear_flow(dataset_path: Path, tmp_path: Path) -> 
     assert result["model_usage"]["calls"] == 3
     assert ("planner", "started") in events
     assert ("final_editor", "completed") in events
+
+    run_dir = tmp_path / "outputs" / "simple-test"
+    json_dashboard = run_dir / "dashboard.json"
+    html_dashboard = run_dir / "dashboard.html"
+    assert json_dashboard.exists() and json_dashboard.stat().st_size > 0
+    assert html_dashboard.exists() and html_dashboard.stat().st_size > 0
+    html_text = html_dashboard.read_text(encoding="utf-8")
+    assert "<!DOCTYPE html>" in html_text
+    assert "id=\"kpis\"" in html_text
+    assert "id=\"charts\"" in html_text
+    assert "id=\"evidence-ledger\"" in html_text

@@ -117,12 +117,22 @@ class SimpleHarness:
                 message="SQL and Python outputs are present but are not independently reconciled.",
             ),
         ]
-        dashboard_path = write_dashboard_artifact(output_dir, evidence, basic_validation)
+        dashboard_path = write_dashboard_artifact(
+            output_dir,
+            evidence,
+            basic_validation,
+            metadata={"harness": "Simple Harness (Condition A)", "run_id": run_id},
+        )
+        html_dashboard_path = output_dir / "dashboard.html"
         emit(
             "code_runner",
             "completed",
             "Execution artifacts created.",
-            {"evidence_items": len(evidence), "artifact": str(dashboard_path)},
+            {
+                "evidence_items": len(evidence),
+                "artifact": str(dashboard_path),
+                "html_artifact": str(html_dashboard_path),
+            },
         )
 
         top_evidence = sorted(
@@ -139,6 +149,14 @@ class SimpleHarness:
             emit,
             traces,
         )
+        # Update dashboard artifact to embed narrative
+        write_dashboard_artifact(
+            output_dir,
+            evidence,
+            basic_validation,
+            narrative=narrative,
+            metadata={"harness": "Simple Harness (Condition A)", "run_id": run_id},
+        )
         emit("final_editor", "completed", "Final response created.", None)
 
         return {
@@ -148,7 +166,7 @@ class SimpleHarness:
             "profile": profile,
             "evidence": [item.model_dump(mode="json") for item in evidence],
             "validation": [check.model_dump(mode="json") for check in basic_validation],
-            "artifacts": [str(dashboard_path)],
+            "artifacts": [str(dashboard_path), str(html_dashboard_path)],
             "narrative": narrative,
             "model_usage": _summarize_usage(traces),
         }
