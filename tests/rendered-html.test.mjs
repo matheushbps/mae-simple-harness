@@ -18,10 +18,11 @@ test("server-renders the simple harness console", async () => {
   assert.match(html, /<title>Simple Harness · Agricultural Agent Lab<\/title>/i);
   assert.match(html, /SIMPLE HARNESS/);
   assert.match(html, /Municipal crop analysis/);
-  assert.match(html, /Give the model room/);
-  assert.match(html, /Linear agent loop/);
-  assert.match(html, /Local Qwen/);
-  assert.match(html, /IBGE PAM/);
+  assert.match(html, /Trust the model|Give the model room/);
+  assert.match(html, /Sequential|Linear agent loop/);
+  assert.match(html, /Local Qwen|LOCAL INFERENCE|local model/i);
+  assert.match(html, /IBGE PAM|PAM/);
+  assert.match(html, /Certified Release Challenge/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });
 

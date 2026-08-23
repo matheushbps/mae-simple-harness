@@ -20,13 +20,17 @@ from mae_runtime.harness import SimpleHarness
 class StubModel:
     model_id = "qwen/qwen3.6-35b-a3b"
 
+    def __init__(self) -> None:
+        self.systems: dict[str, str] = {}
+
     def health(self) -> dict[str, Any]:
         return {"connected": True, "available": True, "model": self.model_id}
 
     def complete_json(
         self, role: str, system: str, user: str, max_tokens: int | None = None
     ) -> tuple[dict[str, Any], LLMTrace]:
-        del system, user, max_tokens
+        del user, max_tokens
+        self.systems[role] = system
         if role in ("dashboard_agent", "dashboard_engineer"):
             payload = {
                 "title": "Municipal Crop Intelligence",
@@ -43,7 +47,8 @@ class StubModel:
         return payload, LLMTrace(role=role, content="{}", completion_tokens=10)
 
     def complete(self, role: str, system: str, user: str, max_tokens: int | None = None) -> LLMTrace:
-        del system, user, max_tokens
+        del user, max_tokens
+        self.systems[role] = system
         return LLMTrace(role=role, content="Evidence-backed fixture analysis.", completion_tokens=12)
 
 
@@ -84,11 +89,13 @@ def test_readonly_sql_rejects_mutation(dataset_path: Path) -> None:
 
 def test_simple_harness_runs_linear_flow(dataset_path: Path, tmp_path: Path) -> None:
     events: list[tuple[str, str]] = []
-    harness = SimpleHarness(StubModel(), dataset_path, tmp_path / "outputs")
+    model = StubModel()
+    harness = SimpleHarness(model, dataset_path, tmp_path / "outputs")
     result = harness.run(
         "simple-test",
         "Analyze agricultural changes in the controlled fixture dataset.",
         lambda node, event_type, _message, _data=None: events.append((node, event_type)),
+        agent_prompts={"final_editor": "CUSTOM FINAL EDITOR SYSTEM"},
     )
     assert result["harness"] == "simple"
     assert result["narrative"] == "Evidence-backed fixture analysis."
@@ -97,6 +104,9 @@ def test_simple_harness_runs_linear_flow(dataset_path: Path, tmp_path: Path) -> 
     assert ("dashboard_agent", "started") in events
     assert ("final_editor", "completed") in events
     assert len(result["inter_agent_messages"]) >= 7
+    assert model.systems["final_editor"] == "CUSTOM FINAL EDITOR SYSTEM"
+    assert result["applied_prompt_overrides"][0]["agent_id"] == "final_editor"
+    assert len(result["applied_prompt_overrides"][0]["sha256"]) == 64
 
     run_dir = tmp_path / "outputs" / "simple-test"
     json_dashboard = run_dir / "dashboard.json"
@@ -108,3 +118,16 @@ def test_simple_harness_runs_linear_flow(dataset_path: Path, tmp_path: Path) -> 
     assert 'id="kpis"' in html_text
     assert 'id="charts"' in html_text
     assert 'id="evidence-ledger"' in html_text
+
+
+def test_simple_rejects_prompt_override_for_deterministic_role(
+    dataset_path: Path, tmp_path: Path
+) -> None:
+    harness = SimpleHarness(StubModel(), dataset_path, tmp_path / "outputs")
+    with pytest.raises(ValueError, match="not inference-backed"):
+        harness.run(
+            "invalid-prompt-role",
+            "Analyze agricultural changes in the controlled fixture dataset.",
+            lambda *_args: None,
+            agent_prompts={"sql_reviewer": "This cannot affect a deterministic reviewer."},
+        )

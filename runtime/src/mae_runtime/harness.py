@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -18,6 +19,30 @@ from .contracts import ValidationCheck
 from .model_client import ModelGateway
 
 Emit = Callable[[str, str, str, dict[str, Any] | None], None]
+INFERENCE_BACKED_AGENTS = {"business_agent", "dashboard_agent", "final_editor"}
+
+
+def validate_prompt_overrides(agent_prompts: dict[str, str] | None) -> dict[str, str]:
+    overrides = agent_prompts or {}
+    unsupported = sorted(set(overrides) - INFERENCE_BACKED_AGENTS)
+    if unsupported:
+        raise ValueError(
+            f"Prompt override targets are not inference-backed: {', '.join(unsupported)}"
+        )
+    invalid = sorted(agent_id for agent_id, prompt in overrides.items() if not prompt.strip())
+    if invalid:
+        raise ValueError(f"Prompt overrides cannot be blank: {', '.join(invalid)}")
+    return {agent_id: prompt.strip() for agent_id, prompt in overrides.items()}
+
+
+def prompt_override_manifest(agent_prompts: dict[str, str]) -> list[dict[str, str]]:
+    return [
+        {
+            "agent_id": agent_id,
+            "sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        }
+        for agent_id, prompt in sorted(agent_prompts.items())
+    ]
 
 
 class SimpleHarness:
@@ -118,6 +143,7 @@ class SimpleHarness:
         emit: Emit,
         agent_prompts: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        agent_prompts = validate_prompt_overrides(agent_prompts)
         traces: list[dict[str, Any]] = []
         messages: list[dict[str, Any]] = []
         active_agents = {
@@ -330,4 +356,5 @@ class SimpleHarness:
                 ),
                 "traces": traces,
             },
+            "applied_prompt_overrides": prompt_override_manifest(agent_prompts),
         }

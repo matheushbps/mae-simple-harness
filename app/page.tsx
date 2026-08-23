@@ -33,7 +33,16 @@ const promptPresets = [
     prompt:
       "Evaluate agricultural productivity gains (yield in kg/ha) between 2019 and 2024 across all commodities. Which crops demonstrated real technological/efficiency gains versus pure acreage expansion?",
   },
+  {
+    id: "certified-release",
+    label: "Certified Release Challenge",
+    description: "Require 28 independently reproduced and reconciled crop metrics",
+    prompt:
+      "[TASK:mae-certified-release-v2] Prepare a board-ready certified analysis of the Brazilian municipal agricultural production database for 2019–2024. Cover all seven crops and, for each crop, planted area, production, weighted yield, and production value. Each of the 28 crop-metric results must be independently reproduced through SQL aggregation and Python calculation from municipal rows. Release exactly one canonical evidence item per metric only when both paths agree within 1e-9 relative tolerance and share dataset provenance. If any metric cannot be reconciled, fail the release and identify the unresolved metric instead of publishing conclusions. Generate the required dashboard artifact and an executive narrative using only released evidence.",
+  },
 ];
+
+const inferenceBackedAgentIds = new Set(["business_agent", "dashboard_agent", "final_editor"]);
 
 const defaultAgents = [
   {
@@ -208,7 +217,7 @@ type InterAgentMessage = {
   receiver: string;
   summary: string;
   verdict: string;
-  payload?: any;
+  payload?: Record<string, unknown> | null;
 };
 
 type RunEvent = {
@@ -216,7 +225,7 @@ type RunEvent = {
   node: string;
   event_type: string;
   message: string;
-  data?: any;
+  data?: Record<string, unknown> | null;
 };
 
 type RunSnapshot = {
@@ -262,6 +271,13 @@ export default function Home() {
     });
     return initialMap;
   });
+  const [agentDefaults, setAgentDefaults] = useState<Record<string, string>>(() => {
+    const initialMap: Record<string, string> = {};
+    defaultAgents.forEach((agent) => {
+      initialMap[agent.id] = agent.system;
+    });
+    return initialMap;
+  });
   const [confirmedAgents, setConfirmedAgents] = useState<Record<string, boolean>>({});
   const [runState, setRunState] = useState<RunState>("idle");
   const [runMessage, setRunMessage] = useState("Awaiting a connected model and linear harness runtime.");
@@ -280,6 +296,7 @@ export default function Home() {
           data.forEach((agent) => {
             initialMap[agent.id] = agent.system;
           });
+          setAgentDefaults(initialMap);
           setAgentPrompts((prev) => {
             const hasCustom = Object.keys(prev).some(
               (k) => prev[k] !== defaultAgents.find((a) => a.id === k)?.system
@@ -295,7 +312,6 @@ export default function Home() {
   }, []);
 
   const checkModel = useCallback(async () => {
-    setConnection("checking");
     try {
       const response = await fetch("/api/model-status", { cache: "no-store" });
       const payload = (await response.json()) as ModelStatus;
@@ -308,8 +324,27 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    void checkModel();
-  }, [checkModel]);
+    let ignore = false;
+    async function initModel() {
+      try {
+        const response = await fetch("/api/model-status", { cache: "no-store" });
+        const payload = (await response.json()) as ModelStatus;
+        if (!ignore) {
+          setModelStatus(payload);
+          setConnection(payload.connected ? "connected" : "offline");
+        }
+      } catch {
+        if (!ignore) {
+          setModelStatus({ connected: false, model: null, message: "Model proxy unreachable." });
+          setConnection("offline");
+        }
+      }
+    }
+    void initModel();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!runId || !["submitting", "accepted", "running"].includes(runState)) return;
@@ -362,17 +397,19 @@ export default function Home() {
   const handleConfirmAllAgentPrompts = () => {
     const confirmedMap: Record<string, boolean> = {};
     defaultAgents.forEach((a) => {
-      confirmedMap[a.id] = true;
+      if (inferenceBackedAgentIds.has(a.id) && agentPrompts[a.id] !== agentDefaults[a.id]) {
+        confirmedMap[a.id] = true;
+      }
     });
     setConfirmedAgents(confirmedMap);
   };
 
   const handleResetAgentPrompt = (agentId: string) => {
-    const defaultAgent = defaultAgents.find((a) => a.id === agentId);
-    if (defaultAgent) {
+    const defaultPromptForAgent = agentDefaults[agentId];
+    if (defaultPromptForAgent) {
       setAgentPrompts((prev) => ({
         ...prev,
-        [agentId]: defaultAgent.system,
+        [agentId]: defaultPromptForAgent,
       }));
       setConfirmedAgents((prev) => ({
         ...prev,
@@ -383,9 +420,7 @@ export default function Home() {
 
   const handleResetAllAgentPrompts = () => {
     const initialMap: Record<string, string> = {};
-    defaultAgents.forEach((a) => {
-      initialMap[a.id] = a.system;
-    });
+    Object.assign(initialMap, agentDefaults);
     setAgentPrompts(initialMap);
     setConfirmedAgents({});
   };
@@ -395,8 +430,24 @@ export default function Home() {
   };
 
   const customAgentsCount = defaultAgents.filter(
-    (agent) => getAgentSystemPrompt(agent.id) !== agent.system
+    (agent) => inferenceBackedAgentIds.has(agent.id) && getAgentSystemPrompt(agent.id) !== agentDefaults[agent.id]
   ).length;
+  const unconfirmedAgentsCount = defaultAgents.filter(
+    (agent) =>
+      inferenceBackedAgentIds.has(agent.id) &&
+      getAgentSystemPrompt(agent.id) !== agentDefaults[agent.id] &&
+      !confirmedAgents[agent.id]
+  ).length;
+  const appliedPromptOverrides = Object.fromEntries(
+    defaultAgents
+      .filter(
+        (agent) =>
+          inferenceBackedAgentIds.has(agent.id) &&
+          confirmedAgents[agent.id] &&
+          getAgentSystemPrompt(agent.id) !== agentDefaults[agent.id]
+      )
+      .map((agent) => [agent.id, getAgentSystemPrompt(agent.id)])
+  );
 
   const runHarness = async () => {
     setRunState("submitting");
@@ -406,7 +457,7 @@ export default function Home() {
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, agent_prompts: agentPrompts }),
+        body: JSON.stringify({ prompt, agent_prompts: appliedPromptOverrides }),
       });
       const payload = (await response.json()) as { run_id?: string; error?: string; status?: string };
       if (!response.ok || !payload.run_id) {
@@ -423,7 +474,10 @@ export default function Home() {
     }
   };
 
-  const canRun = connection === "connected" && !["submitting", "accepted", "running"].includes(runState);
+  const canRun =
+    connection === "connected" &&
+    unconfirmedAgentsCount === 0 &&
+    !["submitting", "accepted", "running"].includes(runState);
   const latestNode = runEvents[runEvents.length - 1]?.node;
   const isCustomPrompt = prompt !== defaultPrompt;
   const modelLabel = modelStatus?.model ? modelStatus.model.replace(/^qwen\//, "") : "local model";
@@ -631,9 +685,13 @@ export default function Home() {
               <div className="custom-prompts-banner">
                 <span>
                   <b>✓</b> {customAgentsCount} Custom Agent System Prompt{customAgentsCount > 1 ? "s" : ""}{" "}
-                  Active & Confirmed
+                  {unconfirmedAgentsCount === 0 ? "Active & Confirmed" : "Awaiting Confirmation"}
                 </span>
-                <small>Will be injected into runtime memory</small>
+                <small>
+                  {unconfirmedAgentsCount === 0
+                    ? "Confirmed overrides will be injected into the next LLM calls"
+                    : "Confirm every edited LLM prompt to enable the run"}
+                </small>
               </div>
             )}
 
@@ -759,7 +817,8 @@ export default function Home() {
           <div className="agent-config-grid">
             {defaultAgents.map((agent) => {
               const currentSystem = getAgentSystemPrompt(agent.id);
-              const isModified = currentSystem !== agent.system;
+              const isInferenceBacked = inferenceBackedAgentIds.has(agent.id);
+              const isModified = isInferenceBacked && currentSystem !== agentDefaults[agent.id];
               const isConfirmed = confirmedAgents[agent.id] || false;
               return (
                 <div key={agent.id} className={`agent-prompt-box ${isModified ? "customized" : ""}`}>
@@ -789,11 +848,11 @@ export default function Home() {
                     value={currentSystem}
                     onChange={(e) => handleAgentPromptChange(agent.id, e.target.value)}
                     placeholder={`System message for ${agent.role}...`}
-                    disabled={["submitting", "accepted", "running"].includes(runState)}
+                    disabled={!isInferenceBacked || ["submitting", "accepted", "running"].includes(runState)}
                   />
                   <div className="agent-prompt-footer">
                     <small style={{ fontSize: "8px", color: "var(--muted)" }}>
-                      {currentSystem.length} chars · Tools: {agent.tools.join(", ")}
+                      {currentSystem.length} chars · {isInferenceBacked ? "LLM prompt" : "Deterministic role · prompt locked"} · Tools: {agent.tools.join(", ")}
                     </small>
                     <div style={{ display: "flex", gap: "5px" }}>
                       {isModified && (
