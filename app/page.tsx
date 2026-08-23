@@ -609,23 +609,27 @@ export default function Home() {
               </div>
               <span className="tag">LINEAR CHAIN</span>
             </div>
-            <div className="simple-pipeline">
+            <div className="pipeline">
               {pipeline.map((step) => {
                 const isCurrent = latestNode === step.nodeId;
                 const hasRun = runEvents.some((e) => e.node === step.nodeId);
                 return (
                   <div
                     key={step.id}
-                    className={`pipeline-step ${isCurrent ? "current" : ""} ${hasRun ? "completed" : ""}`}
+                    className={`pipeline-step ${isCurrent ? "active" : ""} ${hasRun ? "done" : ""}`}
                   >
-                    <span className="step-num">{step.id}</span>
-                    <div className="step-body">
-                      <div className="step-title-row">
-                        <strong>{step.name}</strong>
-                        <small className="step-owner">{step.owner}</small>
-                      </div>
+                    <div className="pipeline-line">
+                      <span>{step.id}</span>
+                      <i />
+                    </div>
+                    <div className="pipeline-copy">
+                      <small>{step.owner}</small>
+                      <strong>{step.name}</strong>
                       <p>{step.detail}</p>
                     </div>
+                    <span className="step-state">
+                      {isCurrent ? "RUNNING" : hasRun ? "DONE" : "IDLE"}
+                    </span>
                   </div>
                 );
               })}
