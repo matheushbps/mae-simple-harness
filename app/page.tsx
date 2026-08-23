@@ -44,6 +44,20 @@ const promptPresets = [
 
 const inferenceBackedAgentIds = new Set(["business_agent", "dashboard_agent", "final_editor"]);
 
+const plainRoleNames: Record<string, string> = {
+  business_agent: "Question planner",
+  sql_agent: "Database calculation",
+  sql_reviewer: "Basic SQL check",
+  python_agent: "Python calculation",
+  python_reviewer: "Basic Python check",
+  reconciliation_agent: "Result merge",
+  dashboard_agent: "Dashboard builder",
+  business_reviewer: "Answer check",
+  ui_ux_reviewer: "Readability check",
+  final_editor: "Report writer",
+  ui_console: "Visible result",
+};
+
 const defaultAgents = [
   {
     id: "business_agent",
@@ -520,7 +534,7 @@ export default function Home() {
         <div className="rail-note">
           <span className="condition-token">CONDITION A</span>
           <strong>Simplified baseline</strong>
-          <p>Sequential orchestration without strict tolerance verification.</p>
+          <p>The two calculations are placed together, but their numbers are not compared before publication.</p>
         </div>
 
         <div className="rail-footer">
@@ -889,19 +903,19 @@ export default function Home() {
             <div>
               <span className="card-index">04</span>
               <div>
-                <small>REAL-TIME COMMUNICATION</small>
-                <h3>Live Inter-Agent Message Stream ({interAgentMessages.length} Transfers)</h3>
+                <small>WHAT IS HAPPENING NOW</small>
+                <h3>Live handoff trail ({interAgentMessages.length} handoffs)</h3>
               </div>
             </div>
-            <span className="tag tag-custom">LIVE DIALOGUE & TRANSFERS</span>
+            <span className="tag tag-custom">LIVE</span>
           </div>
 
           <div className="message-stream-container">
             {interAgentMessages.length === 0 ? (
               <div className="stream-empty">
                 <p>
-                  No inter-agent messages yet. Start a benchmark run to watch agents exchange metric contracts,
-                  sandbox results, review verdicts, and approvals in real time.
+                  Start a run to watch each stage hand work forward. The SQL and Python results will be merged,
+                  but no numeric agreement gate will stop publication.
                 </p>
               </div>
             ) : (
@@ -911,8 +925,8 @@ export default function Home() {
                     <div className="message-meta">
                       <span className="msg-seq">#{index + 1}</span>
                       <span className="msg-route">
-                        <strong>{msg.sender.replace("_", " ")}</strong> ➔{" "}
-                        <strong>{msg.receiver.replace("_", " ")}</strong>
+                        <strong>{plainRoleNames[msg.sender] ?? msg.sender.replaceAll("_", " ")}</strong> ➔{" "}
+                        <strong>{plainRoleNames[msg.receiver] ?? msg.receiver.replaceAll("_", " ")}</strong>
                       </span>
                       <span className={`badge-verdict verdict-badge-${msg.verdict.toLowerCase()}`}>
                         {msg.verdict}
@@ -922,7 +936,7 @@ export default function Home() {
                     <p className="msg-summary">{msg.summary}</p>
                     {msg.payload && Object.keys(msg.payload).length > 0 && (
                       <details className="msg-payload-details">
-                        <summary>Inspect Transferred Payload</summary>
+                        <summary>See supporting details</summary>
                         <pre>
                           <code>{JSON.stringify(msg.payload, null, 2)}</code>
                         </pre>
@@ -1021,7 +1035,7 @@ export default function Home() {
                 <strong>7 selected</strong>
               </div>
             </div>
-            <p>Evidence records are merged without strict cryptographic tolerances or sandboxed isolation.</p>
+            <p>Both result sets remain visible, but the baseline does not compare them or certify one canonical release.</p>
           </article>
         </section>
 
