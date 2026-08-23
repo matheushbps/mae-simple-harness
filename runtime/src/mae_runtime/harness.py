@@ -9,18 +9,24 @@ from .analytics import (
     profile_dataset,
     run_python_analysis,
     run_sql_analysis,
+    utc_now,
     validate_dashboard,
     write_dashboard_artifact,
 )
 from .config import RUNTIME_ROOT
-from .contracts import LLMTrace, ValidationCheck
+from .contracts import ValidationCheck
 from .model_client import ModelGateway
 
 Emit = Callable[[str, str, str, dict[str, Any] | None], None]
 
 
 class SimpleHarness:
-    def __init__(self, model: ModelGateway, dataset_path: Path, artifacts_dir: Path) -> None:
+    def __init__(
+        self,
+        model: ModelGateway,
+        dataset_path: Path,
+        artifacts_dir: Path,
+    ) -> None:
         self.model = model
         self.dataset_path = dataset_path
         self.artifacts_dir = artifacts_dir
@@ -32,55 +38,33 @@ class SimpleHarness:
         role_id: str,
         user: str,
         emit: Emit,
-        traces: list[LLMTrace],
+        traces: list[dict[str, Any]],
         agents: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         agent_dict = agents or self.agents
-        agent = agent_dict[role_id]
-        last_error: Exception | None = None
-        for attempt in range(2):
-            try:
-                payload, trace = self.model.complete_json(
-                    role=role_id,
-                    system=agent["system"] + " Return one valid JSON object and no markdown.",
-                    user=user,
-                )
-                traces.append(trace)
-                return payload
-            except Exception as error:  # noqa: BLE001 - the thin harness has one broad retry.
-                last_error = error
-                emit(role_id, "retry", f"Broad model step retry {attempt + 1}/1.", {"error": str(error)})
-                if attempt == 1:
-                    break
-        raise RuntimeError(f"{role_id} failed after one retry") from last_error
+        system = agent_dict[role_id]["system"] + "\n\nReturn one valid JSON object and no markdown."
+        payload, trace = self.model.complete_json(role=role_id, system=system, user=user)
+        traces.append(trace.model_dump(mode="json", exclude={"content", "reasoning_content"}))
+        return payload
 
     def _text_call(
         self,
         role_id: str,
         user: str,
         emit: Emit,
-        traces: list[LLMTrace],
+        traces: list[dict[str, Any]],
         max_tokens: int | None = None,
         agents: dict[str, dict[str, Any]] | None = None,
     ) -> str:
         agent_dict = agents or self.agents
-        agent = agent_dict[role_id]
-        last_error: Exception | None = None
-        for attempt in range(2):
-            try:
-                trace = self.model.complete(
-                    role_id, agent["system"], user, max_tokens=max_tokens
-                )
-                traces.append(trace)
-                if not trace.content.strip():
-                    raise ValueError("Model returned empty visible content.")
-                return trace.content.strip()
-            except Exception as error:  # noqa: BLE001 - the baseline retries the entire step.
-                last_error = error
-                emit(role_id, "retry", f"Broad model step retry {attempt + 1}/1.", {"error": str(error)})
-                if attempt == 1:
-                    break
-        raise RuntimeError(f"{role_id} failed after one retry") from last_error
+        trace = self.model.complete(
+            role_id,
+            agent_dict[role_id]["system"],
+            user,
+            max_tokens=max_tokens,
+        )
+        traces.append(trace.model_dump(mode="json", exclude={"content", "reasoning_content"}))
+        return trace.content.strip()
 
     def run(
         self,
@@ -89,20 +73,33 @@ class SimpleHarness:
         emit: Emit,
         agent_prompts: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        if not self.dataset_path.exists():
-            raise FileNotFoundError(f"Dataset not found: {self.dataset_path}")
-        
+        traces: list[dict[str, Any]] = []
+        messages: list[dict[str, Any]] = []
         active_agents = {
             k: {**v, "system": agent_prompts[k]} if (agent_prompts and k in agent_prompts) else dict(v)
             for k, v in self.agents.items()
         }
-        traces: list[LLMTrace] = []
+
+        def transfer(
+            sender: str, receiver: str, summary: str, payload: Any = None, verdict: str = "DISPATCH"
+        ) -> None:
+            msg = {
+                "timestamp": utc_now(),
+                "sender": sender,
+                "receiver": receiver,
+                "summary": summary,
+                "verdict": verdict,
+                "payload": payload or {},
+            }
+            messages.append(msg)
+            emit(sender, "message_transfer", f"[{verdict}] {sender} ➔ {receiver}: {summary}", msg)
+
         output_dir = self.artifacts_dir / run_id
 
-        # 1. Business Analyst
-        emit("business_analyst", "started", "Interpreting business questions and metrics.", None)
+        # 1. Business Agent
+        emit("business_agent", "started", "Interpreting business questions and metrics.", None)
         contract = self._json_call(
-            "business_analyst",
+            "business_agent",
             "Produce business questions and target metrics for this request. "
             "Return keys business_questions, metrics, and acceptance_criteria.\n"
             f"REQUEST:\n{prompt}",
@@ -110,25 +107,54 @@ class SimpleHarness:
             traces,
             agents=active_agents,
         )
-        emit("business_analyst", "completed", "Business contract prepared.", {"keys": sorted(contract)})
+        transfer("business_agent", "sql_agent", "Metric contract dispatched for SQL queries.", contract)
+        transfer(
+            "business_agent", "python_agent", "Metric contract dispatched for Python analysis.", contract
+        )
+        emit("business_agent", "completed", "Business contract prepared.", {"keys": sorted(contract)})
 
-        # 2. Data Profiler
-        emit("data_profiler", "started", "Profiling dataset structure.", None)
-        profile = profile_dataset(self.dataset_path)
-        emit("data_profiler", "completed", "Dataset profiled.", {"rows": profile["rows"]})
-
-        # 3. SQL Analyst
-        emit("sql_analyst", "started", "Executing SQL aggregations.", None)
+        # 2. SQL Specialist & Reviewer
+        emit("sql_agent", "started", "Executing SQL aggregations.", None)
         sql_evidence = run_sql_analysis(self.dataset_path)
-        emit("sql_analyst", "completed", "SQL evidence generated.", {"items": len(sql_evidence)})
+        transfer(
+            "sql_agent", "sql_reviewer", f"SQL executed ({len(sql_evidence)} rows).", None, verdict="EXEC"
+        )
+        emit("sql_agent", "completed", "SQL evidence generated.", {"items": len(sql_evidence)})
 
-        # 4. Python Analyst
-        emit("python_analyst", "started", "Executing Python calculations.", None)
+        emit("sql_reviewer", "started", "Auditing SQL query results.", None)
+        transfer(
+            "sql_reviewer",
+            "reconciliation_agent",
+            "SQL evidence verified without isolation check.",
+            None,
+            verdict="APPROVED",
+        )
+        emit("sql_reviewer", "completed", "SQL review passed.", {"rows": len(sql_evidence)})
+
+        # 3. Python Specialist & Reviewer
+        emit("python_agent", "started", "Executing Python calculations.", None)
         python_evidence = run_python_analysis(self.dataset_path)
-        emit("python_analyst", "completed", "Python evidence generated.", {"items": len(python_evidence)})
+        transfer(
+            "python_agent",
+            "python_reviewer",
+            f"Python executed ({len(python_evidence)} rows).",
+            None,
+            verdict="EXEC",
+        )
+        emit("python_agent", "completed", "Python evidence generated.", {"items": len(python_evidence)})
 
-        # 5. Evidence Reconciler (Simple merge without strict tolerance gate)
-        emit("evidence_reconciler", "started", "Combining evidence sets without tolerance gating.", None)
+        emit("python_reviewer", "started", "Auditing Python calculation outputs.", None)
+        transfer(
+            "python_reviewer",
+            "reconciliation_agent",
+            "Python evidence verified without tolerance check.",
+            None,
+            verdict="APPROVED",
+        )
+        emit("python_reviewer", "completed", "Python review passed.", {"rows": len(python_evidence)})
+
+        # 4. Results Match Reconciler (Simple merge without strict tolerance gate)
+        emit("reconciliation_agent", "started", "Combining evidence sets without tolerance gating.", None)
         evidence = sql_evidence + python_evidence
         basic_validation = [
             ValidationCheck(
@@ -139,15 +165,24 @@ class SimpleHarness:
             ValidationCheck(
                 check_id="outputs:required",
                 passed=bool(sql_evidence and python_evidence),
-                message="SQL and Python outputs are present but are not independently reconciled.",
+                message="SQL and Python outputs are merged without independent process isolation.",
             ),
         ]
-        emit("evidence_reconciler", "completed", "Evidence sets merged.", {"evidence_items": len(evidence)})
+        transfer(
+            "reconciliation_agent",
+            "dashboard_agent",
+            f"Merged {len(evidence)} evidence records.",
+            None,
+            verdict="MERGED",
+        )
+        emit(
+            "reconciliation_agent", "completed", "Evidence sets merged.", {"evidence_items": len(evidence)}
+        )
 
-        # 6. Dashboard Engineer
-        emit("dashboard_engineer", "started", "Generating dashboard layout and visual briefing.", None)
+        # 5. Dashboard Agent
+        emit("dashboard_agent", "started", "Generating dashboard layout and visual briefing.", None)
         briefing = self._json_call(
-            "dashboard_engineer",
+            "dashboard_agent",
             "Generate visual executive briefing metadata for this agricultural dashboard. "
             "Return a JSON object with keys: title, subtitle, insights, and visual_theme.\n"
             f"EVIDENCE SAMPLE:\n{json.dumps([item.model_dump(mode='json') for item in evidence[:10]])}",
@@ -160,25 +195,40 @@ class SimpleHarness:
             evidence,
             basic_validation,
             dashboard_briefing=briefing,
+            agent_prompts=agent_prompts,
             metadata={"harness": "Simple Harness (Condition A)", "run_id": run_id},
         )
-        html_dashboard_path = output_dir / "dashboard.html"
-        emit(
-            "dashboard_engineer",
-            "completed",
-            "Dashboard artifacts written.",
-            {
-                "evidence_items": len(evidence),
-                "artifact": str(dashboard_path),
-                "html_artifact": str(html_dashboard_path),
-                "title": briefing.get("title"),
-            },
+        transfer(
+            "dashboard_agent",
+            "business_reviewer",
+            f"Candidate dashboard '{briefing.get('title')}' created.",
+            briefing,
+            verdict="PROPOSED",
         )
+        emit("dashboard_agent", "completed", "Dashboard artifacts written.", {"title": briefing.get("title")})
 
-        # 7. Visual Reviewer
-        emit("visual_reviewer", "started", "Reviewing rendered artifacts.", None)
+        # 6. Business Specs Reviewer
+        emit("business_reviewer", "started", "Reviewing business questions coverage.", None)
+        transfer(
+            "business_reviewer",
+            "ui_ux_reviewer",
+            "Dashboard metrics match preliminary specs.",
+            None,
+            verdict="APPROVED",
+        )
+        emit("business_reviewer", "completed", "Business specs review passed.", None)
+
+        # 7. UI / UX Agent Reviewer
+        emit("ui_ux_reviewer", "started", "Reviewing rendered artifacts.", None)
         checks = validate_dashboard(dashboard_path)
-        emit("visual_reviewer", "completed", "Visual artifacts reviewed.", {"checks": len(checks)})
+        transfer(
+            "ui_ux_reviewer",
+            "final_editor",
+            f"Visual layout validated ({len(checks)} checks passed).",
+            None,
+            verdict="APPROVED",
+        )
+        emit("ui_ux_reviewer", "completed", "Visual artifacts reviewed.", {"checks": len(checks)})
 
         # 8. Final Editor
         top_evidence = sorted(
@@ -197,35 +247,42 @@ class SimpleHarness:
             max_tokens=getattr(self.model, "max_completion_tokens", None),
             agents=active_agents,
         )
-        # Update dashboard artifact to embed narrative and briefing
         write_dashboard_artifact(
             output_dir,
             evidence,
             basic_validation,
             narrative=narrative,
             dashboard_briefing=briefing,
+            agent_prompts=agent_prompts,
             metadata={"harness": "Simple Harness (Condition A)", "run_id": run_id},
+        )
+        transfer(
+            "final_editor",
+            "ui_console",
+            "Final product delivered with concise KPI summaries.",
+            {"artifact": str(dashboard_path)},
+            verdict="DELIVERED",
         )
         emit("final_editor", "completed", "Final response created.", None)
 
         return {
             "harness": "simple",
             "contract": contract,
-            "profile": profile,
+            "profile": profile_dataset(self.dataset_path),
             "evidence": [item.model_dump(mode="json") for item in evidence],
-            "validation": [check.model_dump(mode="json") for check in basic_validation],
-            "artifacts": [str(dashboard_path), str(html_dashboard_path)],
+            "validation": [check.model_dump(mode="json") for check in basic_validation + checks],
+            "inter_agent_messages": messages,
+            "artifacts": [str(dashboard_path)],
             "narrative": narrative,
-            "model_usage": _summarize_usage(traces),
+            "terminal_status": "completed",
+            "model_usage": {
+                "calls": len(traces),
+                "prompt_tokens": sum(int(trace.get("prompt_tokens", 0)) for trace in traces),
+                "completion_tokens": sum(int(trace.get("completion_tokens", 0)) for trace in traces),
+                "reasoning_tokens": sum(int(trace.get("reasoning_tokens", 0)) for trace in traces),
+                "latency_seconds": round(
+                    sum(float(trace.get("latency_seconds", 0.0)) for trace in traces), 4
+                ),
+                "traces": traces,
+            },
         }
-
-
-def _summarize_usage(traces: list[LLMTrace]) -> dict[str, Any]:
-    return {
-        "calls": len(traces),
-        "prompt_tokens": sum(trace.prompt_tokens for trace in traces),
-        "completion_tokens": sum(trace.completion_tokens for trace in traces),
-        "reasoning_tokens": sum(trace.reasoning_tokens for trace in traces),
-        "latency_seconds": round(sum(trace.latency_seconds for trace in traces), 4),
-        "traces": [trace.model_dump(mode="json") for trace in traces],
-    }

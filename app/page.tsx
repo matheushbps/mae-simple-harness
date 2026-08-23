@@ -37,67 +37,83 @@ const promptPresets = [
 
 const defaultAgents = [
   {
-    id: "business_analyst",
+    id: "business_agent",
     index: "01",
-    role: "Business Analyst",
+    role: "Business Agent",
     system:
-      "You are an expert Agribusiness Strategy Analyst. Your mission is to deconstruct agricultural research prompts into direct business questions, target KPI dimensions (planted area, production volume, average yield, gross production value), and practical analytical goals across Brazilian municipal commodities from 2019 to 2024 without schema gating.",
+      "You are the Lead Business Strategy Agent. Your mission is to deconstruct research requests into explicit agricultural questions and target metric contracts across Brazilian municipal commodities from 2019 to 2024.",
     tools: ["dataset_catalog"],
   },
   {
-    id: "data_profiler",
+    id: "sql_agent",
     index: "02",
-    role: "Data Profiler",
+    role: "SQL Specialist Agent",
     system:
-      "You are a Data Quality Specialist for agricultural registries. Your responsibility is to profile the IBGE PAM dataset structure, row counts, and summary distributions across Brazilian municipalities in a rapid broad pass.",
-    tools: ["dataset_profiler"],
-  },
-  {
-    id: "sql_analyst",
-    index: "03",
-    role: "SQL Analyst",
-    system:
-      "You are a Database Analytics Engineer. Your objective is to formulate SQL aggregations using DuckDB that extract key totals and percentage changes across Brazilian agricultural commodities without independent process isolation.",
+      "You are a Senior SQL Analytics Specialist. Your objective is to formulate DuckDB SQL aggregation queries across municipal commodities.",
     tools: ["readonly_sql"],
   },
   {
-    id: "python_analyst",
-    index: "04",
-    role: "Python Analyst",
+    id: "sql_reviewer",
+    index: "03",
+    role: "SQL Reviewer",
     system:
-      "You are a Quantitative Python Data Scientist. Your mission is to compute crop totals, yield comparisons, and growth rates using Python analytical scripts.",
+      "You are an SQL Quality Auditor. Your role is to inspect executed SQL queries and ensure query syntax and row outputs are valid.",
+    tools: ["sql_verifier"],
+  },
+  {
+    id: "python_agent",
+    index: "04",
+    role: "Python / Pandas Agent",
+    system:
+      "You are a Quantitative Python Data Scientist. Your mission is to compute crop totals, yield comparisons, and growth rates using Python scripts.",
     tools: ["python_analytics"],
   },
   {
-    id: "evidence_reconciler",
+    id: "python_reviewer",
     index: "05",
-    role: "Evidence Reconciler",
+    role: "Python Reviewer",
     system:
-      "You are an Evidence Integration Specialist. Your goal is to collect and merge SQL and Python analytical evidence into a combined output dataset for visual reporting.",
+      "You are a Python Quality Auditor. Your role is to inspect executed Python analytics and ensure calculations are ready for merging.",
+    tools: ["python_verifier"],
+  },
+  {
+    id: "reconciliation_agent",
+    index: "06",
+    role: "Results Match Reconciler",
+    system:
+      "You are an Evidence Integration Specialist. Your goal is to collect and merge SQL and Python analytical evidence into a combined dataset.",
     tools: ["evidence_merger"],
   },
   {
-    id: "dashboard_engineer",
-    index: "06",
-    role: "Dashboard Engineer",
+    id: "dashboard_agent",
+    index: "07",
+    role: "Dashboard Agent",
     system:
-      "You are an expert Data Visualization Specialist and Dashboard Creator. Your goal is to create appealing, high-impact, and well-crafted dashboards in Python and HTML. You synthesize agricultural metrics into intuitive KPI cards, interactive trend charts, and strategic executive highlights.",
+      "You are an expert Data Visualization Specialist and Dashboard Creator. Your goal is to create appealing, concise, and well-crafted dashboards with clean mini KPI summaries.",
     tools: ["artifact_writer"],
   },
   {
-    id: "visual_reviewer",
-    index: "07",
-    role: "Visual Reviewer",
+    id: "business_reviewer",
+    index: "08",
+    role: "Business Specs Reviewer",
     system:
-      "You are a Visual Quality Assurance Inspector. Your task is to confirm that generated dashboard artifacts, charts, and summary tables have been properly created and structured.",
+      "You are a Business Specification Reviewer. Your role is to check whether the dashboard covers the requested business questions.",
+    tools: ["contract_auditor"],
+  },
+  {
+    id: "ui_ux_reviewer",
+    index: "09",
+    role: "UI / UX Agent",
+    system:
+      "You are a UI/UX Visual Reviewer. Your task is to confirm that the generated dashboard layout, charts, and summary cards are clean and visually appealing.",
     tools: ["artifact_reader"],
   },
   {
     id: "final_editor",
-    index: "08",
+    index: "10",
     role: "Final Editor",
     system:
-      "You are a Senior Agricultural Report Editor. Your mission is to synthesize the merged analytical evidence into a clear, compelling, and actionable executive report. You highlight major commodity trends between 2019 and 2024, describe business implications, and present strategic recommendations.",
+      "You are a Senior Agricultural Report Editor. Your mission is to synthesize the merged analytical evidence into a clear, compelling, and actionable executive report with limitations.",
     tools: ["evidence_reader"],
   },
 ];
@@ -105,59 +121,73 @@ const defaultAgents = [
 const pipeline = [
   {
     id: "01",
-    nodeId: "business_analyst",
+    nodeId: "business_agent",
     name: "Business Questions",
-    owner: "Business Analyst",
+    owner: "Business Agent",
     detail: "Interprets request into questions and metrics without schema validation.",
   },
   {
     id: "02",
-    nodeId: "data_profiler",
-    name: "Data Profiling",
-    owner: "Data Profiler",
-    detail: "Profiles dataset structure and record counts.",
+    nodeId: "sql_agent",
+    name: "SQL Extraction",
+    owner: "SQL Specialist",
+    detail: "Extracts aggregations using DuckDB SQL without process isolation.",
   },
   {
     id: "03",
-    nodeId: "sql_analyst",
-    name: "SQL Extraction",
-    owner: "SQL Analyst",
-    detail: "Extracts aggregations using DuckDB SQL without isolation.",
+    nodeId: "sql_reviewer",
+    name: "SQL Review",
+    owner: "SQL Reviewer",
+    detail: "Basic check of SQL rows.",
   },
   {
     id: "04",
-    nodeId: "python_analyst",
+    nodeId: "python_agent",
     name: "Python Analytics",
-    owner: "Python Analyst",
-    detail: "Calculates agricultural metrics with Python.",
+    owner: "Python Agent",
+    detail: "Calculates agricultural metrics with Python scripts.",
   },
   {
     id: "05",
-    nodeId: "evidence_reconciler",
-    name: "Evidence Merge",
-    owner: "Evidence Reconciler",
-    detail: "Merges SQL and Python evidence without tolerance gates.",
+    nodeId: "python_reviewer",
+    name: "Python Review",
+    owner: "Python Reviewer",
+    detail: "Basic check of Python metrics.",
   },
   {
     id: "06",
-    nodeId: "dashboard_engineer",
-    name: "Artifact Writing",
-    owner: "Dashboard Engineer",
-    detail: "Builds HTML and JSON dashboard artifacts.",
+    nodeId: "reconciliation_agent",
+    name: "Evidence Merge",
+    owner: "Results Reconciler",
+    detail: "Merges SQL and Python evidence without tolerance gates.",
   },
   {
     id: "07",
-    nodeId: "visual_reviewer",
-    name: "Visual Review",
-    owner: "Visual Reviewer",
-    detail: "Confirms generated artifacts and tables exist.",
+    nodeId: "dashboard_agent",
+    name: "Dashboard Creation",
+    owner: "Dashboard Agent",
+    detail: "Builds HTML and JSON dashboard artifacts.",
   },
   {
     id: "08",
+    nodeId: "business_reviewer",
+    name: "Business Specs",
+    owner: "Business Reviewer",
+    detail: "Reviews business spec coverage.",
+  },
+  {
+    id: "09",
+    nodeId: "ui_ux_reviewer",
+    name: "UI/UX Review",
+    owner: "UI / UX Agent",
+    detail: "Checks artifact presence.",
+  },
+  {
+    id: "10",
     nodeId: "final_editor",
-    name: "Narrative Report",
+    name: "Report Synthesis",
     owner: "Final Editor",
-    detail: "Packages unverified findings into an executive report.",
+    detail: "Writes linear prose from shared memory.",
   },
 ];
 
@@ -172,11 +202,21 @@ type ModelStatus = {
   quantization?: string | null;
 };
 
+type InterAgentMessage = {
+  timestamp: string;
+  sender: string;
+  receiver: string;
+  summary: string;
+  verdict: string;
+  payload?: any;
+};
+
 type RunEvent = {
   sequence: number;
   node: string;
   event_type: string;
   message: string;
+  data?: any;
 };
 
 type RunSnapshot = {
@@ -189,8 +229,8 @@ type RunSnapshot = {
 function BrandIcon() {
   return (
     <svg viewBox="0 0 40 40" aria-hidden="true">
-      <path d="M9 29V15l11-6 11 6v14l-11 6-11-6Z" />
-      <path d="M20 9v26M9 15l11 7 11-7" />
+      <path d="M10 28V12l10-4 10 4v16l-10 4-10-4Z" />
+      <path d="M20 8v24M10 12l10 6 10-6" />
     </svg>
   );
 }
@@ -216,133 +256,144 @@ export default function Home() {
   const [prompt, setPrompt] = useState(defaultPrompt);
   const [agentPrompts, setAgentPrompts] = useState<Record<string, string>>({});
   const [runState, setRunState] = useState<RunState>("idle");
-  const [runMessage, setRunMessage] = useState("Awaiting a connected model and runtime.");
+  const [runMessage, setRunMessage] = useState("Awaiting a connected model and linear harness runtime.");
   const [connection, setConnection] = useState<ConnectionState>("checking");
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
 
-  const isCustomPrompt = prompt.trim() !== defaultPrompt.trim();
-  const customAgentsCount = Object.keys(agentPrompts).filter(
-    (id) => agentPrompts[id] !== defaultAgents.find((a) => a.id === id)?.system,
-  ).length;
-
-  const getAgentSystemPrompt = (id: string) => {
-    return agentPrompts[id] ?? defaultAgents.find((a) => a.id === id)?.system ?? "";
-  };
-
-  const handleAgentPromptChange = (id: string, text: string) => {
-    setAgentPrompts((prev) => ({ ...prev, [id]: text }));
-  };
-
-  const handleResetAgentPrompt = (id: string) => {
-    setAgentPrompts((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  };
-
-  const handleResetAllAgentPrompts = () => {
-    setAgentPrompts({});
-  };
+  useEffect(() => {
+    async function fetchAgents() {
+      try {
+        const res = await fetch("/api/agents");
+        if (res.ok) {
+          const data = (await res.json()) as Array<{ id: string; system: string }>;
+          const initialMap: Record<string, string> = {};
+          data.forEach((agent) => {
+            initialMap[agent.id] = agent.system;
+          });
+          setAgentPrompts((prev) => (Object.keys(prev).length === 0 ? initialMap : prev));
+        }
+      } catch {
+        // Offline fallback
+      }
+    }
+    void fetchAgents();
+  }, []);
 
   const checkModel = useCallback(async () => {
     setConnection("checking");
     try {
       const response = await fetch("/api/model-status", { cache: "no-store" });
-      const data = (await response.json()) as ModelStatus;
-      setModelStatus(data);
-      setConnection(data.connected ? "connected" : "offline");
+      const payload = (await response.json()) as ModelStatus;
+      setModelStatus(payload);
+      setConnection(payload.connected ? "connected" : "offline");
     } catch {
-      setModelStatus({ connected: false, model: null, message: "Model status check failed." });
+      setModelStatus({ connected: false, model: null, message: "Model proxy unreachable." });
       setConnection("offline");
     }
   }, []);
 
   useEffect(() => {
-    const initialCheck = window.setTimeout(() => void checkModel(), 0);
-    const interval = window.setInterval(() => void checkModel(), 30_000);
-    return () => {
-      window.clearTimeout(initialCheck);
-      window.clearInterval(interval);
-    };
+    void checkModel();
   }, [checkModel]);
 
   useEffect(() => {
-    if (!runId || ["completed", "failed", "error"].includes(runState)) return;
-    let cancelled = false;
-    const poll = async () => {
+    if (!runId || !["submitting", "accepted", "running"].includes(runState)) return;
+    const interval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/run-status?run_id=${runId}`, { cache: "no-store" });
-        const snapshot = (await response.json()) as RunSnapshot & { error?: string };
-        if (!response.ok) throw new Error(snapshot.error ?? "Unable to read run status.");
-        if (cancelled) return;
-        setRunEvents(snapshot.events ?? []);
-        const latest = snapshot.events?.at(-1);
-        setRunMessage(latest?.message ?? `Run ${runId} is ${snapshot.status}.`);
-        setRunState(snapshot.status === "queued" ? "accepted" : snapshot.status);
-        if (snapshot.status === "failed" && snapshot.error) setRunMessage(snapshot.error);
-      } catch (error) {
-        if (!cancelled) {
-          setRunState("error");
-          setRunMessage(error instanceof Error ? error.message : "Run polling failed.");
+        const response = await fetch(`/api/run-status?run_id=${encodeURIComponent(runId)}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as RunSnapshot;
+        setRunEvents(payload.events ?? []);
+        if (payload.status === "completed") {
+          setRunState("completed");
+          setRunMessage("Simple harness completed all stages.");
+        } else if (payload.status === "failed") {
+          setRunState("failed");
+          setRunMessage(payload.error ?? "Simple harness failed.");
+        } else {
+          setRunState("running");
+          const latest = payload.events[payload.events.length - 1];
+          if (latest) {
+            setRunMessage(`[${latest.node}] ${latest.message}`);
+          }
         }
+      } catch {
+        // Polling retry
       }
-    };
-    void poll();
-    const interval = window.setInterval(() => void poll(), 2_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
+    }, 400);
+    return () => clearInterval(interval);
   }, [runId, runState]);
 
-  async function runAnalysis() {
-    if (prompt.trim().length < 20) return;
-    setRunState("submitting");
-    setRunMessage("Submitting prompt to the simple runtime…");
-    try {
-      const activeCustomPrompts =
-        customAgentsCount > 0
-          ? Object.fromEntries(
-              Object.entries(agentPrompts).filter(
-                ([id, text]) => text !== defaultAgents.find((a) => a.id === id)?.system,
-              ),
-            )
-          : undefined;
+  const handleAgentPromptChange = (agentId: string, newPrompt: string) => {
+    setAgentPrompts((prev) => ({
+      ...prev,
+      [agentId]: newPrompt,
+    }));
+  };
 
+  const handleResetAgentPrompt = (agentId: string) => {
+    const defaultAgent = defaultAgents.find((a) => a.id === agentId);
+    if (defaultAgent) {
+      setAgentPrompts((prev) => ({
+        ...prev,
+        [agentId]: defaultAgent.system,
+      }));
+    }
+  };
+
+  const handleResetAllAgentPrompts = () => {
+    const initialMap: Record<string, string> = {};
+    defaultAgents.forEach((a) => {
+      initialMap[a.id] = a.system;
+    });
+    setAgentPrompts(initialMap);
+  };
+
+  const getAgentSystemPrompt = (agentId: string) => {
+    return agentPrompts[agentId] ?? defaultAgents.find((a) => a.id === agentId)?.system ?? "";
+  };
+
+  const customAgentsCount = defaultAgents.filter(
+    (agent) => getAgentSystemPrompt(agent.id) !== agent.system
+  ).length;
+
+  const runHarness = async () => {
+    setRunState("submitting");
+    setRunMessage("Dispatching run to simple harness runtime…");
+    setRunEvents([]);
+    try {
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: prompt.trim(),
-          provider: "local-qwen",
-          agent_prompts: activeCustomPrompts,
-        }),
+        body: JSON.stringify({ prompt, agent_prompts: agentPrompts }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "The runtime rejected this run.");
-      setRunId(data.run_id);
-      setRunEvents([]);
+      const payload = (await response.json()) as { run_id?: string; error?: string; status?: string };
+      if (!response.ok || !payload.run_id) {
+        setRunState("error");
+        setRunMessage(payload.error ?? "Submission failed.");
+        return;
+      }
+      setRunId(payload.run_id);
       setRunState("accepted");
-      setRunMessage(data.message ?? `Run ${data.run_id ?? "accepted"} entered the linear loop.`);
+      setRunMessage(`Run accepted (${payload.run_id}). Awaiting execution…`);
     } catch (error) {
       setRunState("error");
-      setRunMessage(error instanceof Error ? error.message : "Unable to reach the agent runtime.");
+      setRunMessage(error instanceof Error ? error.message : "Submission network error.");
     }
-  }
+  };
 
-  const modelLabel =
-    connection === "checking" ? "Checking local endpoint" : modelStatus?.model ?? "Model server unreachable";
-  const canRun =
-    connection === "connected" &&
-    prompt.trim().length >= 20 &&
-    !["submitting", "accepted", "running"].includes(runState);
-  const latestNode = runEvents.at(-1)?.node;
-  const completedNodes = new Set(
-    runEvents.filter((event) => event.event_type === "completed").map((event) => event.node),
-  );
+  const canRun = connection === "connected" && !["submitting", "accepted", "running"].includes(runState);
+  const latestNode = runEvents[runEvents.length - 1]?.node;
+  const isCustomPrompt = prompt !== defaultPrompt;
+  const modelLabel = modelStatus?.model ? modelStatus.model.replace(/^qwen\//, "") : "local model";
+
+  const interAgentMessages: InterAgentMessage[] = runEvents
+    .filter((ev) => ev.event_type === "message_transfer" && ev.data)
+    .map((ev) => ev.data as InterAgentMessage);
 
   return (
     <main className="app-frame variant-simple">
@@ -361,21 +412,24 @@ export default function Home() {
           <a className="active" href="#workspace">
             <span>01</span>Run console
           </a>
-          <a href="#agents">
-            <span>02</span>Agent prompts
+          <a href="#pipeline">
+            <span>02</span>Pipeline
           </a>
-          <a href="#method">
-            <span>03</span>Method
+          <a href="#agents">
+            <span>03</span>Agent prompts
+          </a>
+          <a href="#inter-agent-feed">
+            <span>04</span>Message stream
           </a>
           <a href="#evidence">
-            <span>04</span>Evidence
+            <span>05</span>Ledger
           </a>
         </nav>
 
         <div className="rail-note">
           <span className="condition-token">CONDITION A</span>
-          <strong>Thin orchestration</strong>
-          <p>A linear 8-agent sequence without typed state or mathematical gates.</p>
+          <strong>Simplified baseline</strong>
+          <p>Sequential orchestration without strict tolerance verification.</p>
         </div>
 
         <div className="rail-footer">
@@ -418,15 +472,15 @@ export default function Home() {
 
         <section className="hero-band">
           <div>
-            <span className="section-label">SIMPLE HARNESS · FROZEN BASELINE</span>
+            <span className="section-label">SIMPLE HARNESS · SEQUENTIAL LOOP</span>
             <h2>
-              Give the model room.
+              Trust the model.
               <br />
-              Measure what breaks.
+              Observe the drift.
             </h2>
             <p>
-              The baseline uses a linear 8-agent pipeline, shared context, and only basic execution
-              completion checks.
+              The baseline runs 10 agent roles sequentially with broad prompts, unstructured memory, and
+              direct visual synthesis.
             </p>
           </div>
           <div className="hero-index" aria-label="Experiment condition A">
@@ -438,23 +492,23 @@ export default function Home() {
         <section className="metric-grid" aria-label="Harness summary">
           <article>
             <small>TOPOLOGY</small>
-            <strong>Linear loop</strong>
-            <span>8 sequential stages</span>
+            <strong>Sequential</strong>
+            <span>Linear pipeline</span>
           </article>
           <article>
             <small>MODEL ROLES</small>
-            <strong>8 agents</strong>
-            <span>Direct handoffs</span>
+            <strong>10 specialists</strong>
+            <span>Sequential chain</span>
           </article>
           <article>
             <small>VALIDATION</small>
-            <strong>Basic</strong>
-            <span>Execution checks</span>
+            <strong>Basic checks</strong>
+            <span>No tolerance gating</span>
           </article>
           <article>
             <small>RETRY POLICY</small>
-            <strong>1×</strong>
-            <span>Whole-step retry</span>
+            <strong>None</strong>
+            <span>Single pass forward</span>
           </article>
         </section>
 
@@ -464,17 +518,17 @@ export default function Home() {
               <div>
                 <span className="card-index">01</span>
                 <div>
-                  <small>INPUT CONTRACT</small>
+                  <small>INPUT PROMPT</small>
                   <h3>Business prompt</h3>
                 </div>
               </div>
               <span className={`tag ${isCustomPrompt ? "tag-custom" : ""}`}>
-                {isCustomPrompt ? "CUSTOM PROMPT · EDITABLE" : "BENCHMARK V1.0 · DEFAULT"}
+                {isCustomPrompt ? "CUSTOM PROMPT" : "DEFAULT BENCHMARK"}
               </span>
             </div>
 
             <div className="preset-selector">
-              <small>ANALYTICAL PRESETS:</small>
+              <small>PRESET SCENARIOS:</small>
               <div className="preset-chips">
                 {promptPresets.map((preset) => (
                   <button
@@ -492,7 +546,7 @@ export default function Home() {
                     type="button"
                     className="preset-chip reset-chip"
                     onClick={() => setPrompt(defaultPrompt)}
-                    title="Reset to benchmark default"
+                    title="Reset to default benchmark prompt"
                   >
                     Reset
                   </button>
@@ -500,33 +554,25 @@ export default function Home() {
               </div>
             </div>
 
-            <label className="sr-only" htmlFor="business-prompt">
-              Business research prompt
-            </label>
             <textarea
-              id="business-prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Enter your custom agricultural research prompt (minimum 20 characters)..."
+              placeholder="Enter agricultural analysis prompt..."
               disabled={["submitting", "accepted", "running"].includes(runState)}
             />
             <div className="prompt-footer">
-              <small>
-                {prompt.trim().length} / 20,000 chars{" "}
-                {prompt.trim().length < 20 ? "(minimum 20 chars required)" : ""}
-              </small>
+              <small>{prompt.length} characters</small>
             </div>
-
             <div className="prompt-meta">
               <div>
-                <small>PROVIDER</small>
-                <strong>Local Qwen</strong>
-                <span>OpenAI-compatible API</span>
+                <small>SOURCE TABLE</small>
+                <strong>SIDRA PAM 5457</strong>
+                <span>IBGE municipal records</span>
               </div>
               <div>
-                <small>DATA SCOPE</small>
-                <strong>IBGE PAM</strong>
-                <span>Municipal · 2019–2024</span>
+                <small>COMPARISON</small>
+                <strong>2019 vs 2024</strong>
+                <span>Pre vs post baseline</span>
               </div>
               <div>
                 <small>MODEL WINDOW</small>
@@ -542,70 +588,59 @@ export default function Home() {
               <p>
                 <span className={`status-dot ${connection}`} />
                 {connection === "connected"
-                  ? "Model endpoint verified. Runtime submission is enabled."
+                  ? "Model endpoint verified. Simple harness run is enabled."
                   : "Connect the model server to enable a benchmark run."}
               </p>
-              <button className="primary-action" type="button" disabled={!canRun} onClick={runAnalysis}>
-                {runState === "submitting" ? "Submitting run…" : "Start benchmark run"}
+              <button className="primary-action" type="button" disabled={!canRun} onClick={runHarness}>
+                {runState === "submitting" ? "Launching run…" : "Start simple run"}
                 <ArrowIcon />
               </button>
             </div>
           </article>
 
-          <article className="card method-card" id="method">
+          <article className="card pipeline-card" id="pipeline">
             <div className="card-head">
               <div>
                 <span className="card-index">02</span>
                 <div>
-                  <small>EXECUTION DESIGN</small>
-                  <h3>Linear agent loop</h3>
+                  <small>EXECUTION PIPELINE</small>
+                  <h3>Sequential 10-Stage Pipeline</h3>
                 </div>
               </div>
-              <span className="tag">MINIMAL CONTROL</span>
+              <span className="tag">LINEAR CHAIN</span>
             </div>
-            <div className="pipeline">
-              {pipeline.map((step, index) => {
-                const active = (runState === "submitting" && index === 0) || latestNode === step.nodeId;
-                const completed = completedNodes.has(step.nodeId);
+            <div className="simple-pipeline">
+              {pipeline.map((step) => {
+                const isCurrent = latestNode === step.nodeId;
+                const hasRun = runEvents.some((e) => e.node === step.nodeId);
                 return (
-                  <div className={`pipeline-step ${active ? "active" : ""}`} key={step.id}>
-                    <div className="pipeline-line">
-                      <span>{step.id}</span>
-                      {index < pipeline.length - 1 && <i />}
-                    </div>
-                    <div className="pipeline-copy">
-                      <small>{step.owner}</small>
-                      <strong>{step.name}</strong>
+                  <div
+                    key={step.id}
+                    className={`pipeline-step ${isCurrent ? "current" : ""} ${hasRun ? "completed" : ""}`}
+                  >
+                    <span className="step-num">{step.id}</span>
+                    <div className="step-body">
+                      <div className="step-title-row">
+                        <strong>{step.name}</strong>
+                        <small className="step-owner">{step.owner}</small>
+                      </div>
                       <p>{step.detail}</p>
                     </div>
-                    <span className="step-state">
-                      {completed
-                        ? "DONE"
-                        : active
-                          ? "ACTIVE"
-                          : runState === "failed"
-                            ? "BLOCKED"
-                            : "QUEUED"}
-                    </span>
                   </div>
                 );
               })}
             </div>
-            <div className="method-foot">
-              <span>Direct handoff pipeline</span>
-              <span>No typed state</span>
-              <span>No evidence reconciliation</span>
-            </div>
           </article>
         </section>
 
+        {/* 03 · Agent System Messages & Prompts */}
         <section className="agent-config-card" id="agents">
           <div className="card-head">
             <div>
               <span className="card-index">03</span>
               <div>
                 <small>ROLE ORCHESTRATION</small>
-                <h3>Agent System Messages & Prompts (8 Roles)</h3>
+                <h3>Agent System Messages & Prompts (10 Roles)</h3>
               </div>
             </div>
             <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
@@ -628,8 +663,8 @@ export default function Home() {
             </div>
           </div>
           <p style={{ fontSize: "11.5px", color: "var(--muted)", marginTop: "6px", marginBottom: "12px" }}>
-            Inspect and customize the system message for each linear agent. Custom prompts apply to
-            subsequent runs in-memory without modifying the underlying repository files.
+            Customize the system message for each specialist agent. Custom prompts apply to subsequent runs
+            in-memory and are embedded into the resulting HTML dashboard.
           </p>
 
           <div className="agent-config-grid">
@@ -676,6 +711,59 @@ export default function Home() {
           </div>
         </section>
 
+        {/* 04 · Real-Time Inter-Agent Message Stream */}
+        <section className="card message-stream-card" id="inter-agent-feed">
+          <div className="card-head">
+            <div>
+              <span className="card-index">04</span>
+              <div>
+                <small>REAL-TIME COMMUNICATION</small>
+                <h3>Live Inter-Agent Message Stream ({interAgentMessages.length} Transfers)</h3>
+              </div>
+            </div>
+            <span className="tag tag-custom">LIVE DIALOGUE & TRANSFERS</span>
+          </div>
+
+          <div className="message-stream-container">
+            {interAgentMessages.length === 0 ? (
+              <div className="stream-empty">
+                <p>
+                  No inter-agent messages yet. Start a benchmark run to watch agents exchange metric contracts,
+                  sandbox results, review verdicts, and approvals in real time.
+                </p>
+              </div>
+            ) : (
+              <div className="message-list">
+                {interAgentMessages.map((msg, index) => (
+                  <article className={`message-item verdict-${msg.verdict.toLowerCase()}`} key={index}>
+                    <div className="message-meta">
+                      <span className="msg-seq">#{index + 1}</span>
+                      <span className="msg-route">
+                        <strong>{msg.sender.replace("_", " ")}</strong> ➔{" "}
+                        <strong>{msg.receiver.replace("_", " ")}</strong>
+                      </span>
+                      <span className={`badge-verdict verdict-badge-${msg.verdict.toLowerCase()}`}>
+                        {msg.verdict}
+                      </span>
+                      <span className="msg-time">{msg.timestamp?.split("T")[1]?.slice(0, 8) || ""}</span>
+                    </div>
+                    <p className="msg-summary">{msg.summary}</p>
+                    {msg.payload && Object.keys(msg.payload).length > 0 && (
+                      <details className="msg-payload-details">
+                        <summary>Inspect Transferred Payload</summary>
+                        <pre>
+                          <code>{JSON.stringify(msg.payload, null, 2)}</code>
+                        </pre>
+                      </details>
+                    )}
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* 05 · Evidence & Validation Ledger */}
         <section className="evidence-grid" id="evidence">
           <article className={`card run-card ${runState}`}>
             <div className="mini-head">
@@ -683,7 +771,7 @@ export default function Home() {
                 <span className="pulse-mark" />
                 <div>
                   <small>RUN CONTROL</small>
-                  <h3>Execution status</h3>
+                  <h3>Execution ledger</h3>
                 </div>
               </div>
               <span>{runState.toUpperCase()}</span>
@@ -692,14 +780,6 @@ export default function Home() {
               {runMessage}
             </p>
             <div className="trace-list">
-              <div>
-                <span>MODEL</span>
-                <strong>{modelStatus?.model ?? "Not verified"}</strong>
-              </div>
-              <div>
-                <span>RUNTIME</span>
-                <strong>{runState === "error" ? "Unavailable" : runState.toUpperCase()}</strong>
-              </div>
               <div>
                 <span>RUN ID</span>
                 <strong>{runId ?? "Not started"}</strong>
@@ -769,7 +849,7 @@ export default function Home() {
                 <strong>7 selected</strong>
               </div>
             </div>
-            <p>Source snapshot, schema, transformations, and checksums will be identical in both conditions.</p>
+            <p>Evidence records are merged without strict cryptographic tolerances or sandboxed isolation.</p>
           </article>
         </section>
 

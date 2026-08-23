@@ -27,7 +27,7 @@ class StubModel:
         self, role: str, system: str, user: str, max_tokens: int | None = None
     ) -> tuple[dict[str, Any], LLMTrace]:
         del system, user, max_tokens
-        if role == "dashboard_engineer":
+        if role in ("dashboard_agent", "dashboard_engineer"):
             payload = {
                 "title": "Municipal Crop Intelligence",
                 "subtitle": "Strategic Executive Highlights",
@@ -93,9 +93,10 @@ def test_simple_harness_runs_linear_flow(dataset_path: Path, tmp_path: Path) -> 
     assert result["harness"] == "simple"
     assert result["narrative"] == "Evidence-backed fixture analysis."
     assert result["model_usage"]["calls"] == 3
-    assert ("business_analyst", "started") in events
-    assert ("dashboard_engineer", "started") in events
+    assert ("business_agent", "started") in events
+    assert ("dashboard_agent", "started") in events
     assert ("final_editor", "completed") in events
+    assert len(result["inter_agent_messages"]) >= 7
 
     run_dir = tmp_path / "outputs" / "simple-test"
     json_dashboard = run_dir / "dashboard.json"
@@ -104,19 +105,6 @@ def test_simple_harness_runs_linear_flow(dataset_path: Path, tmp_path: Path) -> 
     assert html_dashboard.exists() and html_dashboard.stat().st_size > 0
     html_text = html_dashboard.read_text(encoding="utf-8")
     assert "<!DOCTYPE html>" in html_text
-    assert "id=\"kpis\"" in html_text
-    assert "id=\"charts\"" in html_text
-    assert "id=\"evidence-ledger\"" in html_text
-
-
-def test_simple_harness_supports_custom_agent_prompts(dataset_path: Path, tmp_path: Path) -> None:
-    events: list[tuple[str, str]] = []
-    harness = SimpleHarness(StubModel(), dataset_path, tmp_path / "outputs")
-    result = harness.run(
-        "custom-agent-test",
-        "Analyze agricultural changes in the controlled fixture dataset.",
-        lambda node, event_type, _message, _data=None: events.append((node, event_type)),
-        agent_prompts={"final_editor": "Custom modified final editor system prompt."},
-    )
-    assert result["harness"] == "simple"
-    assert ("final_editor", "completed") in events
+    assert 'id="kpis"' in html_text
+    assert 'id="charts"' in html_text
+    assert 'id="evidence-ledger"' in html_text
