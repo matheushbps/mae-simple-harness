@@ -145,11 +145,21 @@ class SimpleHarness:
         emit("evidence_reconciler", "completed", "Evidence sets merged.", {"evidence_items": len(evidence)})
 
         # 6. Dashboard Engineer
-        emit("dashboard_engineer", "started", "Generating dashboard artifacts.", None)
+        emit("dashboard_engineer", "started", "Generating dashboard layout and visual briefing.", None)
+        briefing = self._json_call(
+            "dashboard_engineer",
+            "Generate visual executive briefing metadata for this agricultural dashboard. "
+            "Return a JSON object with keys: title, subtitle, insights, and visual_theme.\n"
+            f"EVIDENCE SAMPLE:\n{json.dumps([item.model_dump(mode='json') for item in evidence[:10]])}",
+            emit,
+            traces,
+            agents=active_agents,
+        )
         dashboard_path = write_dashboard_artifact(
             output_dir,
             evidence,
             basic_validation,
+            dashboard_briefing=briefing,
             metadata={"harness": "Simple Harness (Condition A)", "run_id": run_id},
         )
         html_dashboard_path = output_dir / "dashboard.html"
@@ -161,6 +171,7 @@ class SimpleHarness:
                 "evidence_items": len(evidence),
                 "artifact": str(dashboard_path),
                 "html_artifact": str(html_dashboard_path),
+                "title": briefing.get("title"),
             },
         )
 
@@ -178,7 +189,7 @@ class SimpleHarness:
         emit("final_editor", "started", "Writing the final response from the shared evidence set.", None)
         narrative = self._text_call(
             "final_editor",
-            "Write an executive agricultural analysis from this evidence. Include limitations.\n"
+            "Write an executive agricultural analysis synthesizing the evidence according to your role.\n"
             f"REQUEST:\n{prompt}\nEVIDENCE:\n"
             f"{json.dumps([item.model_dump(mode='json') for item in top_evidence])}",
             emit,
@@ -186,12 +197,13 @@ class SimpleHarness:
             max_tokens=getattr(self.model, "max_completion_tokens", None),
             agents=active_agents,
         )
-        # Update dashboard artifact to embed narrative
+        # Update dashboard artifact to embed narrative and briefing
         write_dashboard_artifact(
             output_dir,
             evidence,
             basic_validation,
             narrative=narrative,
+            dashboard_briefing=briefing,
             metadata={"harness": "Simple Harness (Condition A)", "run_id": run_id},
         )
         emit("final_editor", "completed", "Final response created.", None)

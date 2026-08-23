@@ -27,11 +27,19 @@ class StubModel:
         self, role: str, system: str, user: str, max_tokens: int | None = None
     ) -> tuple[dict[str, Any], LLMTrace]:
         del system, user, max_tokens
-        payload = {
-            "business_questions": ["What changed?"],
-            "metrics": ["production"],
-            "acceptance_criteria": ["All crops analyzed"],
-        }
+        if role == "dashboard_engineer":
+            payload = {
+                "title": "Municipal Crop Intelligence",
+                "subtitle": "Strategic Executive Highlights",
+                "insights": ["Planted area increased in grains", "Yield efficiency improved"],
+                "visual_theme": "cyber_dark",
+            }
+        else:
+            payload = {
+                "business_questions": ["What changed?"],
+                "metrics": ["production"],
+                "acceptance_criteria": ["All crops analyzed"],
+            }
         return payload, LLMTrace(role=role, content="{}", completion_tokens=10)
 
     def complete(self, role: str, system: str, user: str, max_tokens: int | None = None) -> LLMTrace:
@@ -84,8 +92,9 @@ def test_simple_harness_runs_linear_flow(dataset_path: Path, tmp_path: Path) -> 
     )
     assert result["harness"] == "simple"
     assert result["narrative"] == "Evidence-backed fixture analysis."
-    assert result["model_usage"]["calls"] == 2
+    assert result["model_usage"]["calls"] == 3
     assert ("business_analyst", "started") in events
+    assert ("dashboard_engineer", "started") in events
     assert ("final_editor", "completed") in events
 
     run_dir = tmp_path / "outputs" / "simple-test"
