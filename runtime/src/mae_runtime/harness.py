@@ -349,7 +349,7 @@ class SimpleHarness:
         emit(
             "reconciliation_agent", "completed", "Evidence sets merged.", {"evidence_items": len(evidence)}
         )
-        temporal_rows = [] if temporal_task else (
+        temporal_rows = (
             generated_analysis.get("sql", {}).get("rows", [])
             or generated_analysis.get("python", {}).get("rows", [])
         )

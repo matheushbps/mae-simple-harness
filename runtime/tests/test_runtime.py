@@ -199,6 +199,92 @@ def test_simple_dashboard_renderer_applies_structured_visual_theme() -> None:
     assert "--accent: #2563eb;" in rendered
 
 
+def test_simple_dashboard_renderer_uses_temporal_rows_when_evidence_is_empty() -> None:
+    rendered = render_dashboard_html(
+        {
+            "title": "Temporal fixture",
+            "source": "Fixture",
+            "evidence": [],
+            "validation": [],
+            "temporal_rows": [
+                {
+                    "crop_code": "40124",
+                    "crop_name": "Upland cotton (seed)",
+                    "year": 2019,
+                    "production_tonnes": 10.0,
+                    "weighted_yield_kg_ha": 100.0,
+                    "yoy_production_pct": None,
+                    "production_rank": 2,
+                    "trailing_3y_yield_kg_ha": 100.0,
+                    "yield_vs_trailing_pct": 0.0,
+                },
+                {
+                    "crop_code": "40124",
+                    "crop_name": "Upland cotton (seed)",
+                    "year": 2024,
+                    "production_tonnes": 20.0,
+                    "weighted_yield_kg_ha": 140.0,
+                    "yoy_production_pct": 100.0,
+                    "production_rank": 1,
+                    "trailing_3y_yield_kg_ha": 120.0,
+                    "yield_vs_trailing_pct": 16.6666666667,
+                },
+                {
+                    "crop_code": "00001",
+                    "crop_name": "Paddy rice",
+                    "year": 2019,
+                    "production_tonnes": 30.0,
+                    "weighted_yield_kg_ha": 200.0,
+                    "yoy_production_pct": None,
+                    "production_rank": 1,
+                    "trailing_3y_yield_kg_ha": 200.0,
+                    "yield_vs_trailing_pct": 0.0,
+                },
+                {
+                    "crop_code": "00001",
+                    "crop_name": "Paddy rice",
+                    "year": 2024,
+                    "production_tonnes": 15.0,
+                    "weighted_yield_kg_ha": 180.0,
+                    "yoy_production_pct": -50.0,
+                    "production_rank": 2,
+                    "trailing_3y_yield_kg_ha": 190.0,
+                    "yield_vs_trailing_pct": -5.2631578947,
+                },
+            ],
+            "generated_analysis": {
+                "sql": {"status": "completed"},
+                "python": {"status": "completed"},
+            },
+            "temporal_label": "4 reconciled crop-year rows",
+        },
+        dashboard_briefing={
+            "title": "Temporal fixture",
+            "visual_theme": {"background": "#ffffff", "accent": "#2563eb"},
+        },
+    )
+
+    assert "Reconciled Crop-Year Rows" in rendered
+    assert "4" in rendered
+    assert "Total Production" in rendered
+    assert "Paddy rice" in rendered
+    assert "0 ha" not in rendered
+
+
+def test_simple_dashboard_renderer_shows_placeholder_when_no_data_is_released() -> None:
+    rendered = render_dashboard_html(
+        {
+            "title": "Empty fixture",
+            "source": "Fixture",
+            "evidence": [],
+            "validation": [],
+        }
+    )
+
+    assert "No released data available" in rendered
+    assert "0 ha" not in rendered
+
+
 def test_simple_temporal_task_executes_one_generated_attempt_per_branch(
     dataset_path: Path, tmp_path: Path
 ) -> None:
@@ -221,7 +307,7 @@ def test_simple_temporal_task_executes_one_generated_attempt_per_branch(
     assert "No analytical conclusions were published" in result["narrative"]
     assert not [event for event in events if event[1] == "branch_repair"]
     html = (tmp_path / "outputs" / "simple-generated" / "dashboard.html").read_text()
-    assert 'id="temporal-analysis"' not in html
+    assert 'id="temporal-analysis"' in html
 
 
 def test_simple_analytical_prompt_changes_generated_results(
