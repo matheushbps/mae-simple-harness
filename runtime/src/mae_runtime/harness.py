@@ -18,6 +18,8 @@ from .code_execution import execute_generated_python, execute_generated_sql
 from .config import RUNTIME_ROOT
 from .contracts import ValidationCheck
 from .model_client import ModelGateway
+from .temporal_prompts import temporal_generation_prompt, temporal_prompt_hashes
+from .visual_requirements import apply_explicit_visual_requirements
 
 Emit = Callable[[str, str, str, dict[str, Any] | None], None]
 INFERENCE_BACKED_AGENTS = {
@@ -198,15 +200,7 @@ class SimpleHarness:
         if temporal_task:
             sql_spec = self._json_call(
                 "sql_agent",
-                "Generate the complete DuckDB SQL implementation for the frozen request. "
-                "Return keys code and assumptions. code must be one read-only SELECT/WITH query "
-                "over crop_metrics and must return the exact columns requested by the task. "
-                "Use staged CTEs plus LAG, DENSE_RANK, and AVG window functions.\n"
-                "AVAILABLE TABLE:\n"
-                "crop_metrics(municipality_code, municipality_name, state_code, year, crop_code, "
-                "crop_name, planted_area_ha, harvested_area_ha, production_tonnes, yield_kg_ha, "
-                "production_value_thousand_brl)\n"
-                f"FROZEN REQUEST:\n{prompt}\nCONTRACT:\n{json.dumps(contract)}",
+                temporal_generation_prompt("sql", prompt, contract),
                 emit,
                 traces,
                 max_tokens=3072,
@@ -226,34 +220,39 @@ class SimpleHarness:
                     "diagnostics": [item.model_dump(mode="json") for item in sql_execution.diagnostics],
                 },
             )
-        sql_evidence = run_sql_analysis(self.dataset_path)
+        sql_evidence = [] if temporal_task else run_sql_analysis(self.dataset_path)
         transfer(
-            "sql_agent", "sql_reviewer", f"SQL executed ({len(sql_evidence)} rows).", None, verdict="EXEC"
+            "sql_agent",
+            "sql_reviewer",
+            f"SQL generated branch finished ({len(generated_analysis.get('sql', {}).get('rows', []))} rows)."
+            if temporal_task
+            else f"SQL executed ({len(sql_evidence)} rows).",
+            None,
+            verdict="EXEC",
         )
         emit("sql_agent", "completed", "SQL evidence generated.", {"items": len(sql_evidence)})
 
         emit("sql_reviewer", "started", "Auditing SQL query results.", None)
+        sql_passed = (
+            generated_analysis.get("sql", {}).get("status") == "completed"
+            if temporal_task
+            else bool(sql_evidence)
+        )
         transfer(
             "sql_reviewer",
             "reconciliation_agent",
-            "SQL evidence verified without isolation check.",
+            "SQL first attempt completed." if sql_passed else "SQL first attempt was rejected.",
             None,
-            verdict="APPROVED",
+            verdict="APPROVED" if sql_passed else "REJECTED",
         )
-        emit("sql_reviewer", "completed", "SQL review passed.", {"rows": len(sql_evidence)})
+        emit("sql_reviewer", "completed", "SQL branch recorded.", {"passed": sql_passed})
 
         # 3. Python Specialist & Reviewer
         emit("python_agent", "started", "Executing Python calculations.", None)
         if temporal_task:
             python_spec = self._json_call(
                 "python_agent",
-                "Generate an independent pure-Python implementation for the frozen request. "
-                "Return keys code and assumptions. code must define analyze(rows) and return a "
-                "list of dictionaries with the exact task columns. Imports, files, network, SQL "
-                "results, and the national_crop_year view are unavailable. Each input row contains "
-                "municipality_code, crop_code, crop_name, year, planted_area_ha, harvested_area_ha, "
-                "production_tonnes, and production_value_thousand_brl.\n"
-                f"FROZEN REQUEST:\n{prompt}\nCONTRACT:\n{json.dumps(contract)}",
+                temporal_generation_prompt("python", prompt, contract),
                 emit,
                 traces,
                 max_tokens=3072,
@@ -275,25 +274,35 @@ class SimpleHarness:
                     ],
                 },
             )
-        python_evidence = run_python_analysis(self.dataset_path)
+        python_evidence = [] if temporal_task else run_python_analysis(self.dataset_path)
         transfer(
             "python_agent",
             "python_reviewer",
-            f"Python executed ({len(python_evidence)} rows).",
+            "Python generated branch finished "
+            f"({len(generated_analysis.get('python', {}).get('rows', []))} rows)."
+            if temporal_task
+            else f"Python executed ({len(python_evidence)} rows).",
             None,
             verdict="EXEC",
         )
         emit("python_agent", "completed", "Python evidence generated.", {"items": len(python_evidence)})
 
         emit("python_reviewer", "started", "Auditing Python calculation outputs.", None)
+        python_passed = (
+            generated_analysis.get("python", {}).get("status") == "completed"
+            if temporal_task
+            else bool(python_evidence)
+        )
         transfer(
             "python_reviewer",
             "reconciliation_agent",
-            "Python evidence verified without tolerance check.",
+            "Python first attempt completed."
+            if python_passed
+            else "Python first attempt was rejected; no repair route exists.",
             None,
-            verdict="APPROVED",
+            verdict="APPROVED" if python_passed else "REJECTED",
         )
-        emit("python_reviewer", "completed", "Python review passed.", {"rows": len(python_evidence)})
+        emit("python_reviewer", "completed", "Python branch recorded.", {"passed": python_passed})
 
         # 4. Results Match Reconciler (Simple merge without strict tolerance gate)
         emit("reconciliation_agent", "started", "Combining evidence sets without tolerance gating.", None)
@@ -310,6 +319,26 @@ class SimpleHarness:
                 message="SQL and Python outputs are merged without independent process isolation.",
             ),
         ]
+        if temporal_task:
+            basic_validation = [
+                ValidationCheck(
+                    check_id="temporal:sql_execution",
+                    passed=sql_passed,
+                    message="SQL first attempt completed." if sql_passed else "SQL first attempt failed.",
+                ),
+                ValidationCheck(
+                    check_id="temporal:python_execution",
+                    passed=python_passed,
+                    message="Python first attempt completed."
+                    if python_passed
+                    else "Python first attempt failed.",
+                ),
+                ValidationCheck(
+                    check_id="temporal:cross_method_agreement",
+                    passed=False,
+                    message="The Simple architecture has no numeric reconciliation gate.",
+                ),
+            ]
         transfer(
             "reconciliation_agent",
             "dashboard_agent",
@@ -320,10 +349,22 @@ class SimpleHarness:
         emit(
             "reconciliation_agent", "completed", "Evidence sets merged.", {"evidence_items": len(evidence)}
         )
-        temporal_rows = (
+        temporal_rows = [] if temporal_task else (
             generated_analysis.get("sql", {}).get("rows", [])
             or generated_analysis.get("python", {}).get("rows", [])
         )
+        failure_reason = None
+        if temporal_task:
+            failed = [
+                branch
+                for branch in ("sql", "python")
+                if generated_analysis.get(branch, {}).get("status") != "completed"
+            ]
+            detail = ", ".join(failed) if failed else "cross-method agreement"
+            failure_reason = (
+                f"Temporal release failed at {detail}; the Simple architecture has no automatic "
+                "branch repair or numeric reconciliation gate."
+            )
 
         # 5. Dashboard Agent
         emit("dashboard_agent", "started", "Generating dashboard layout and visual briefing.", None)
@@ -340,6 +381,7 @@ class SimpleHarness:
             traces,
             agents=active_agents,
         )
+        briefing = apply_explicit_visual_requirements(briefing, prompt)
         dashboard_path = write_dashboard_artifact(
             output_dir,
             evidence,
@@ -390,16 +432,20 @@ class SimpleHarness:
             reverse=True,
         )[:16]
         emit("final_editor", "started", "Writing the final response from the shared evidence set.", None)
-        narrative = self._text_call(
-            "final_editor",
-            "Write an executive agricultural analysis synthesizing the evidence according to your role.\n"
-            f"REQUEST:\n{prompt}\nEVIDENCE:\n"
-            f"{json.dumps([item.model_dump(mode='json') for item in top_evidence])}\n"
-            f"GENERATED TEMPORAL ROWS:\n{json.dumps(temporal_rows)}",
-            emit,
-            traces,
-            max_tokens=min(getattr(self.model, "max_completion_tokens", 1024), 1024),
-            agents=active_agents,
+        narrative = (
+            f"## Analysis not released\n\n{failure_reason}\n\nNo analytical conclusions were published."
+            if temporal_task
+            else self._text_call(
+                "final_editor",
+                "Write an executive agricultural analysis synthesizing the evidence according to your role.\n"
+                f"REQUEST:\n{prompt}\nEVIDENCE:\n"
+                f"{json.dumps([item.model_dump(mode='json') for item in top_evidence])}\n"
+                f"GENERATED TEMPORAL ROWS:\n{json.dumps(temporal_rows)}",
+                emit,
+                traces,
+                max_tokens=min(getattr(self.model, "max_completion_tokens", 1024), 1024),
+                agents=active_agents,
+            )
         )
         write_dashboard_artifact(
             output_dir,
@@ -425,6 +471,7 @@ class SimpleHarness:
         return {
             "harness": "simple",
             "generated_analysis": generated_analysis,
+            "first_attempt_prompt_hashes": temporal_prompt_hashes(prompt) if temporal_task else {},
             "contract": contract,
             "profile": profile_dataset(self.dataset_path),
             "evidence": [item.model_dump(mode="json") for item in evidence],
@@ -432,7 +479,8 @@ class SimpleHarness:
             "inter_agent_messages": messages,
             "artifacts": [str(dashboard_path)],
             "narrative": narrative,
-            "terminal_status": "completed",
+            "terminal_status": "failed" if temporal_task else "completed",
+            "failure_reason": failure_reason,
             "model_usage": {
                 "calls": len(traces),
                 "prompt_tokens": sum(int(trace.get("prompt_tokens", 0)) for trace in traces),

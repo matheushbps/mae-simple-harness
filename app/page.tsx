@@ -499,6 +499,7 @@ export default function Home() {
     unconfirmedAgentsCount === 0 &&
     !["submitting", "accepted", "running"].includes(runState);
   const latestNode = runEvents[runEvents.length - 1]?.node;
+  const codeAttempts = runEvents.filter((event) => event.event_type === "branch_attempt");
   const isCustomPrompt = prompt !== defaultPrompt;
   const modelLabel = modelStatus?.model ? modelStatus.model.replace(/^qwen\//, "") : "local model";
 
@@ -760,6 +761,11 @@ export default function Home() {
                 </div>
               </div>
               <span className="tag">LINEAR CHAIN</span>
+            </div>
+            <div className="architecture-explainer simple-explainer">
+              <strong>One try, then the pipeline moves on</strong>
+              <span>SQL and Python generate real code once. A rejection is visible, but this architecture has no route back to the failed specialist.</span>
+              <small>{codeAttempts.length ? `${codeAttempts.length}/2 code branches attempted` : "Waiting for generated code"}</small>
             </div>
             <div className="pipeline">
               {pipeline.map((step) => {

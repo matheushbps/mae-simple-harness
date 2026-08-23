@@ -40,7 +40,16 @@ def _execute_run(run_id: str, prompt: str, agent_prompts: dict[str, str] | None 
 
     try:
         result = harness.run(run_id, prompt, emit, agent_prompts=agent_prompts)
-        store.update(run_id, status="completed", result=result)
+        terminal_status = str(result.get("terminal_status", "completed"))
+        if terminal_status == "failed":
+            store.update(
+                run_id,
+                status="failed",
+                result=result,
+                error=str(result.get("failure_reason", "Analysis was not released.")),
+            )
+        else:
+            store.update(run_id, status="completed", result=result)
     except Exception as error:  # noqa: BLE001 - terminal failures are persisted for evaluation.
         emit("runtime", "failed", "Run terminated with an exception.", {"error": str(error)})
         store.update(run_id, status="failed", error=str(error))

@@ -177,6 +177,8 @@ def test_simple_dashboard_agent_receives_the_original_visual_request(
     )
 
     assert "white background" in model.users["dashboard_agent"]
+    html = (tmp_path / "outputs/simple-white-theme/dashboard.html").read_text()
+    assert "--bg: #ffffff;" in html
 
 
 def test_simple_dashboard_renderer_applies_structured_visual_theme() -> None:
@@ -213,11 +215,13 @@ def test_simple_temporal_task_executes_one_generated_attempt_per_branch(
     assert generated["python"]["status"] == "completed"
     assert len(generated["sql"]["rows"]) == 4
     assert len(generated["python"]["rows"]) == 4
-    assert result["model_usage"]["calls"] == 5
+    assert result["model_usage"]["calls"] == 4
+    assert result["terminal_status"] == "failed"
+    assert result["evidence"] == []
+    assert "No analytical conclusions were published" in result["narrative"]
     assert not [event for event in events if event[1] == "branch_repair"]
     html = (tmp_path / "outputs" / "simple-generated" / "dashboard.html").read_text()
-    assert 'id="temporal-analysis"' in html
-    assert "4 generated crop-year rows" in html
+    assert 'id="temporal-analysis"' not in html
 
 
 def test_simple_analytical_prompt_changes_generated_results(
