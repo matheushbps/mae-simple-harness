@@ -44,7 +44,9 @@ Codex or another coding agent authors this repository. Qwen is only the runtime 
 npm install
 cd runtime && python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
-cp .env.example .env
+export AGENT_RUNTIME_URL=http://127.0.0.1:8787
+export MODEL_BASE_URL=http://127.0.0.1:1234/v1
+export MODEL_ID=qwen/qwen3.6-35b-a3b
 ```
 
 ## Verification
