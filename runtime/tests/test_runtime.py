@@ -9,6 +9,7 @@ from mae_runtime.analytics import (
     execute_readonly_sql,
     profile_dataset,
     reconcile_evidence,
+    render_dashboard_html,
     run_python_analysis,
     run_sql_analysis,
 )
@@ -22,6 +23,7 @@ class StubModel:
 
     def __init__(self) -> None:
         self.systems: dict[str, str] = {}
+        self.users: dict[str, str] = {}
 
     def health(self) -> dict[str, Any]:
         return {"connected": True, "available": True, "model": self.model_id}
@@ -29,8 +31,9 @@ class StubModel:
     def complete_json(
         self, role: str, system: str, user: str, max_tokens: int | None = None
     ) -> tuple[dict[str, Any], LLMTrace]:
-        del user, max_tokens
+        del max_tokens
         self.systems[role] = system
+        self.users[role] = user
         if role in ("dashboard_agent", "dashboard_engineer"):
             payload = {
                 "title": "Municipal Crop Intelligence",
@@ -47,8 +50,9 @@ class StubModel:
         return payload, LLMTrace(role=role, content="{}", completion_tokens=10)
 
     def complete(self, role: str, system: str, user: str, max_tokens: int | None = None) -> LLMTrace:
-        del user, max_tokens
+        del max_tokens
         self.systems[role] = system
+        self.users[role] = user
         return LLMTrace(role=role, content="Evidence-backed fixture analysis.", completion_tokens=12)
 
 
@@ -118,6 +122,39 @@ def test_simple_harness_runs_linear_flow(dataset_path: Path, tmp_path: Path) -> 
     assert 'id="kpis"' in html_text
     assert 'id="charts"' in html_text
     assert 'id="evidence-ledger"' in html_text
+
+
+def test_simple_dashboard_agent_receives_the_original_visual_request(
+    dataset_path: Path, tmp_path: Path
+) -> None:
+    model = StubModel()
+    harness = SimpleHarness(model, dataset_path, tmp_path / "outputs")
+
+    harness.run(
+        "simple-white-theme",
+        "Analyze the controlled fixture. The dashboard should have a white background!",
+        lambda *_args: None,
+    )
+
+    assert "white background" in model.users["dashboard_agent"]
+
+
+def test_simple_dashboard_renderer_applies_structured_visual_theme() -> None:
+    rendered = render_dashboard_html(
+        {
+            "title": "Theme fixture",
+            "source": "Fixture",
+            "evidence": [],
+            "validation": [],
+        },
+        dashboard_briefing={
+            "title": "Theme fixture",
+            "visual_theme": {"background": "#ffffff", "accent": "#2563eb"},
+        },
+    )
+
+    assert "--bg: #ffffff;" in rendered
+    assert "--accent: #2563eb;" in rendered
 
 
 def test_simple_rejects_prompt_override_for_deterministic_role(
