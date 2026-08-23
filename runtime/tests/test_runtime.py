@@ -56,6 +56,46 @@ class StubModel:
         return LLMTrace(role=role, content="Evidence-backed fixture analysis.", completion_tokens=12)
 
 
+class GeneratedCodeModel(StubModel):
+    def complete_json(
+        self, role: str, system: str, user: str, max_tokens: int | None = None
+    ) -> tuple[dict[str, Any], LLMTrace]:
+        if role == "sql_agent":
+            self.systems[role] = system
+            self.users[role] = user
+            crop_filter = "WHERE crop_code = '40124'" if "only crop 40124" in user else ""
+            return {
+                "code": f"""
+                    SELECT crop_code, crop_name, year,
+                           sum(production_tonnes) AS production_tonnes
+                    FROM crop_metrics {crop_filter}
+                    GROUP BY crop_code, crop_name, year
+                    ORDER BY crop_code, year
+                """,
+                "assumptions": [],
+            }, LLMTrace(role=role, content="{}", completion_tokens=10)
+        if role == "python_agent":
+            self.systems[role] = system
+            self.users[role] = user
+            condition = "row['crop_code'] == '40124'" if "only crop 40124" in user else "True"
+            return {
+                "code": f"""
+def analyze(rows):
+    totals = {{}}
+    names = {{}}
+    for row in rows:
+        if {condition}:
+            key = (row["crop_code"], row["year"])
+            names[row["crop_code"]] = row["crop_name"]
+            totals[key] = totals.get(key, 0.0) + (row["production_tonnes"] or 0.0)
+    return [{{"crop_code": key[0], "crop_name": names[key[0]], "year": key[1],
+             "production_tonnes": totals[key]}} for key in sorted(totals)]
+""",
+                "assumptions": [],
+            }, LLMTrace(role=role, content="{}", completion_tokens=10)
+        return super().complete_json(role, system, user, max_tokens)
+
+
 @pytest.fixture
 def dataset_path(tmp_path: Path) -> Path:
     path = tmp_path / "fixture.duckdb"
@@ -155,6 +195,52 @@ def test_simple_dashboard_renderer_applies_structured_visual_theme() -> None:
 
     assert "--bg: #ffffff;" in rendered
     assert "--accent: #2563eb;" in rendered
+
+
+def test_simple_temporal_task_executes_one_generated_attempt_per_branch(
+    dataset_path: Path, tmp_path: Path
+) -> None:
+    model = GeneratedCodeModel()
+    events: list[tuple[str, str]] = []
+    result = SimpleHarness(model, dataset_path, tmp_path / "outputs").run(
+        "simple-generated",
+        "[TASK:mae-temporal-window-analysis-v3] Analyze every crop-year.",
+        lambda node, event_type, *_args: events.append((node, event_type)),
+    )
+
+    generated = result["generated_analysis"]
+    assert generated["sql"]["status"] == "completed"
+    assert generated["python"]["status"] == "completed"
+    assert len(generated["sql"]["rows"]) == 4
+    assert len(generated["python"]["rows"]) == 4
+    assert result["model_usage"]["calls"] == 5
+    assert not [event for event in events if event[1] == "branch_repair"]
+    html = (tmp_path / "outputs" / "simple-generated" / "dashboard.html").read_text()
+    assert 'id="temporal-analysis"' in html
+    assert "4 generated crop-year rows" in html
+
+
+def test_simple_analytical_prompt_changes_generated_results(
+    dataset_path: Path, tmp_path: Path
+) -> None:
+    harness = SimpleHarness(GeneratedCodeModel(), dataset_path, tmp_path / "outputs")
+    all_crops = harness.run(
+        "simple-all-crops",
+        "[TASK:mae-temporal-window-analysis-v3] Analyze every crop-year.",
+        lambda *_args: None,
+    )
+    one_crop = harness.run(
+        "simple-one-crop",
+        "[TASK:mae-temporal-window-analysis-v3] Analyze only crop 40124.",
+        lambda *_args: None,
+    )
+
+    assert len(all_crops["generated_analysis"]["sql"]["rows"]) == 4
+    assert len(one_crop["generated_analysis"]["sql"]["rows"]) == 2
+    assert (
+        all_crops["generated_analysis"]["sql"]["code_sha256"]
+        != one_crop["generated_analysis"]["sql"]["code_sha256"]
+    )
 
 
 def test_simple_rejects_prompt_override_for_deterministic_role(

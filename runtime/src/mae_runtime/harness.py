@@ -14,12 +14,19 @@ from .analytics import (
     validate_dashboard,
     write_dashboard_artifact,
 )
+from .code_execution import execute_generated_python, execute_generated_sql
 from .config import RUNTIME_ROOT
 from .contracts import ValidationCheck
 from .model_client import ModelGateway
 
 Emit = Callable[[str, str, str, dict[str, Any] | None], None]
-INFERENCE_BACKED_AGENTS = {"business_agent", "dashboard_agent", "final_editor"}
+INFERENCE_BACKED_AGENTS = {
+    "business_agent",
+    "sql_agent",
+    "python_agent",
+    "dashboard_agent",
+    "final_editor",
+}
 
 
 def validate_prompt_overrides(agent_prompts: dict[str, str] | None) -> dict[str, str]:
@@ -166,6 +173,8 @@ class SimpleHarness:
             emit(sender, "message_transfer", f"[{verdict}] {sender} ➔ {receiver}: {summary}", msg)
 
         output_dir = self.artifacts_dir / run_id
+        temporal_task = "[TASK:mae-temporal-window-analysis-v3]" in prompt
+        generated_analysis: dict[str, Any] = {}
 
         # 1. Business Agent
         emit("business_agent", "started", "Interpreting business questions and metrics.", None)
@@ -186,6 +195,37 @@ class SimpleHarness:
 
         # 2. SQL Specialist & Reviewer
         emit("sql_agent", "started", "Executing SQL aggregations.", None)
+        if temporal_task:
+            sql_spec = self._json_call(
+                "sql_agent",
+                "Generate the complete DuckDB SQL implementation for the frozen request. "
+                "Return keys code and assumptions. code must be one read-only SELECT/WITH query "
+                "over crop_metrics and must return the exact columns requested by the task. "
+                "Use staged CTEs plus LAG, DENSE_RANK, and AVG window functions.\n"
+                "AVAILABLE TABLE:\n"
+                "crop_metrics(municipality_code, municipality_name, state_code, year, crop_code, "
+                "crop_name, planted_area_ha, harvested_area_ha, production_tonnes, yield_kg_ha, "
+                "production_value_thousand_brl)\n"
+                f"FROZEN REQUEST:\n{prompt}\nCONTRACT:\n{json.dumps(contract)}",
+                emit,
+                traces,
+                max_tokens=3072,
+                agents=active_agents,
+            )
+            sql_execution = execute_generated_sql(
+                self.dataset_path, str(sql_spec.get("code", "")), max_rows=100
+            )
+            generated_analysis["sql"] = sql_execution.model_dump(mode="json")
+            emit(
+                "sql_agent",
+                "branch_attempt",
+                f"SQL first attempt {sql_execution.status}; no automatic correction is available.",
+                {
+                    "status": sql_execution.status,
+                    "code_sha256": sql_execution.code_sha256,
+                    "diagnostics": [item.model_dump(mode="json") for item in sql_execution.diagnostics],
+                },
+            )
         sql_evidence = run_sql_analysis(self.dataset_path)
         transfer(
             "sql_agent", "sql_reviewer", f"SQL executed ({len(sql_evidence)} rows).", None, verdict="EXEC"
@@ -204,6 +244,37 @@ class SimpleHarness:
 
         # 3. Python Specialist & Reviewer
         emit("python_agent", "started", "Executing Python calculations.", None)
+        if temporal_task:
+            python_spec = self._json_call(
+                "python_agent",
+                "Generate an independent pure-Python implementation for the frozen request. "
+                "Return keys code and assumptions. code must define analyze(rows) and return a "
+                "list of dictionaries with the exact task columns. Imports, files, network, SQL "
+                "results, and the national_crop_year view are unavailable. Each input row contains "
+                "municipality_code, crop_code, crop_name, year, planted_area_ha, harvested_area_ha, "
+                "production_tonnes, and production_value_thousand_brl.\n"
+                f"FROZEN REQUEST:\n{prompt}\nCONTRACT:\n{json.dumps(contract)}",
+                emit,
+                traces,
+                max_tokens=3072,
+                agents=active_agents,
+            )
+            python_execution = execute_generated_python(
+                self.dataset_path, str(python_spec.get("code", "")), max_rows=100
+            )
+            generated_analysis["python"] = python_execution.model_dump(mode="json")
+            emit(
+                "python_agent",
+                "branch_attempt",
+                f"Python first attempt {python_execution.status}; no automatic correction is available.",
+                {
+                    "status": python_execution.status,
+                    "code_sha256": python_execution.code_sha256,
+                    "diagnostics": [
+                        item.model_dump(mode="json") for item in python_execution.diagnostics
+                    ],
+                },
+            )
         python_evidence = run_python_analysis(self.dataset_path)
         transfer(
             "python_agent",
@@ -249,6 +320,10 @@ class SimpleHarness:
         emit(
             "reconciliation_agent", "completed", "Evidence sets merged.", {"evidence_items": len(evidence)}
         )
+        temporal_rows = (
+            generated_analysis.get("sql", {}).get("rows", [])
+            or generated_analysis.get("python", {}).get("rows", [])
+        )
 
         # 5. Dashboard Agent
         emit("dashboard_agent", "started", "Generating dashboard layout and visual briefing.", None)
@@ -259,6 +334,7 @@ class SimpleHarness:
             "Return a JSON object with keys: title, subtitle, insights, and visual_theme. "
             "visual_theme must be an object with background and accent as six-digit hex colors.\n"
             f"ORIGINAL REQUEST:\n{prompt}\n"
+            f"TEMPORAL RESULT SAMPLE:\n{json.dumps(temporal_rows[:10])}\n"
             f"EVIDENCE SAMPLE:\n{json.dumps([item.model_dump(mode='json') for item in evidence[:10]])}",
             emit,
             traces,
@@ -271,6 +347,9 @@ class SimpleHarness:
             dashboard_briefing=briefing,
             agent_prompts=agent_prompts,
             metadata={"harness": "Simple Harness (Condition A)", "run_id": run_id},
+            temporal_rows=temporal_rows,
+            generated_analysis=generated_analysis,
+            temporal_label=f"{len(temporal_rows)} generated crop-year rows",
         )
         transfer(
             "dashboard_agent",
@@ -315,7 +394,8 @@ class SimpleHarness:
             "final_editor",
             "Write an executive agricultural analysis synthesizing the evidence according to your role.\n"
             f"REQUEST:\n{prompt}\nEVIDENCE:\n"
-            f"{json.dumps([item.model_dump(mode='json') for item in top_evidence])}",
+            f"{json.dumps([item.model_dump(mode='json') for item in top_evidence])}\n"
+            f"GENERATED TEMPORAL ROWS:\n{json.dumps(temporal_rows)}",
             emit,
             traces,
             max_tokens=min(getattr(self.model, "max_completion_tokens", 1024), 1024),
@@ -329,6 +409,9 @@ class SimpleHarness:
             dashboard_briefing=briefing,
             agent_prompts=agent_prompts,
             metadata={"harness": "Simple Harness (Condition A)", "run_id": run_id},
+            temporal_rows=temporal_rows,
+            generated_analysis=generated_analysis,
+            temporal_label=f"{len(temporal_rows)} generated crop-year rows",
         )
         transfer(
             "final_editor",
@@ -341,6 +424,7 @@ class SimpleHarness:
 
         return {
             "harness": "simple",
+            "generated_analysis": generated_analysis,
             "contract": contract,
             "profile": profile_dataset(self.dataset_path),
             "evidence": [item.model_dump(mode="json") for item in evidence],
